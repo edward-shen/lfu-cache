@@ -180,14 +180,23 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// equal access count, then the most recently added value is evicted.
     #[inline]
     pub fn pop_lfu(&mut self) -> Option<Value> {
-        self.pop_lfu_key_value().map(|(_, v)| v)
+        self.pop_lfu_key_value_frequency().map(|(_, v, _)| v)
     }
 
-    /// Events the least frequently used key-value pair and returns it. If the
+    /// Evicts the least frequently used key-value pair and returns it. If the
     /// cache is empty, then this returns None. If there are multiple items that
     /// have an equal access count, then the most recently added key-value pair
     /// is evicted.
+    #[inline]
     pub fn pop_lfu_key_value(&mut self) -> Option<(Key, Value)> {
+        self.pop_lfu_key_value_frequency().map(|(k, v, _)| (k, v))
+    }
+
+    /// Evicts the least frequently used value and returns it, the key it was
+    /// inserted under, and the frequency it had. If the cache is empty, then
+    /// this returns None. If there are multiple items that have an equal access
+    /// count, then the most recently added key-value pair is evicted.
+    pub fn pop_lfu_key_value_frequency(&mut self) -> Option<(Key, Value, usize)> {
         if let Some(mut entry_ptr) = self.freq_list.pop_lfu() {
             // SAFETY: This is fine since self is uniquely borrowed.
             let key = unsafe { entry_ptr.as_ref().key.as_ref() };
@@ -202,7 +211,8 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
                 Ok(k) => k,
                 Err(_) => unsafe { unreachable_unchecked() },
             };
-            return Some((key, entry.value));
+
+            return Some((key, entry.value, unsafe { entry.owner.as_ref().frequency }));
         }
         None
     }
