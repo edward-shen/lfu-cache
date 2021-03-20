@@ -13,10 +13,11 @@
 //! containers.
 
 use hashbrown::HashMap;
+use std::fmt::Display;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
-use std::{fmt::Display, rc::Rc};
+use std::rc::Rc;
 
 /// A collection that, if limited to a certain capacity, will evict based on the
 /// least recently used value.
