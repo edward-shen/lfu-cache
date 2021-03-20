@@ -1,4 +1,5 @@
 #![warn(clippy::pedantic, clippy::nursery, clippy::cargo)]
+#![deny(missing_docs)]
 
 //! This crate provides an LRU cache with constant time insertion, fetching,
 //! and removing.
@@ -14,16 +15,20 @@
 //! can not make better use of the CPU cache in comparison to array-based
 //! containers.
 
-use hashbrown::HashMap;
+use std::collections::HashMap;
 use std::fmt::Display;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
+use std::iter::{FromIterator, FusedIterator};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
+use std::{borrow::Borrow, hint::unreachable_unchecked};
 
 /// A collection that, if limited to a certain capacity, will evict based on the
 /// least recently used value.
-#[derive(Default, Eq, PartialEq, Debug)]
+// Note that Default is _not_ implemented. This is intentional, as most people
+// likely don't want an unbounded LFU cache by default.
+#[derive(Eq, PartialEq, Debug)]
 pub struct LfuCache<Key: Hash + Eq, Value> {
     lookup: HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>,
     freq_list: FrequencyList<Key, Value>,
@@ -35,20 +40,6 @@ unsafe impl<Key: Hash + Eq, Value> Send for LfuCache<Key, Value> {}
 unsafe impl<Key: Hash + Eq, Value> Sync for LfuCache<Key, Value> {}
 
 impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
-    /// Creates a LFU cache with no bound. This turns the LFU cache into a very
-    /// expensive [`HashMap`] if the least frequently used item is never
-    /// removed. This is useful if you want to have fine-grain control over when
-    /// the LFU cache should evict. If a LFU cache was constructed using this
-    /// function, users should call [`Self::pop_lfu`] to remove the least
-    /// frequently used item.
-    ///
-    /// Construction of the cache will not heap allocate any values.
-    #[inline]
-    #[must_use]
-    pub fn unbounded() -> Self {
-        Self::with_capacity(0)
-    }
-
     /// Creates a LFU cache with a capacity bound. When the capacity is reached,
     /// then the least frequently used item is evicted. If there are multiple
     /// least frequently used items in this collection, the most recently
@@ -73,16 +64,84 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// // Otherwise, the least frequently value is evicted.
     /// assert_eq!(cache.pop_lfu(), Some(3));
     /// ```
-    ///
-    /// Construction of the cache will not heap allocate any values.
+    #[inline]
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            lookup: HashMap::new(),
+            lookup: HashMap::with_capacity(capacity),
             freq_list: FrequencyList::new(),
             capacity: NonZeroUsize::new(capacity),
             len: 0,
         }
+    }
+
+    /// Creates a LFU cache with no bound. This turns the LFU cache into a very
+    /// expensive [`HashMap`] if the least frequently used item is never
+    /// removed. This is useful if you want to have fine-grain control over when
+    /// the LFU cache should evict. If a LFU cache was constructed using this
+    /// function, users should call [`Self::pop_lfu`] to remove the least
+    /// frequently used item.
+    ///
+    /// Construction of this cache will not heap allocate.
+    #[inline]
+    #[must_use]
+    pub fn unbounded() -> Self {
+        Self::with_capacity(0)
+    }
+
+    /// Sets the new capacity. If the provided capacity is zero, then this
+    /// will turn the cache into an unbounded cache. If the new capacity is less
+    /// than the current capacity, the least frequently used items are evicted
+    /// until the number of items is equal to the capacity.
+    ///
+    /// If the cache becomes unbounded, then users must manually call
+    /// [`Self::pop_lfu`] to remove the least frequently used item.
+    pub fn set_capacity(&mut self, new_capacity: usize) {
+        self.capacity = NonZeroUsize::new(new_capacity);
+
+        if let Some(capacity) = self.capacity {
+            while self.len > capacity.get() {
+                self.pop_lfu();
+            }
+        }
+    }
+
+    /// Inserts a value into the cache using the provided key. If the value
+    /// already exists, then the value is replace with the provided value and
+    /// the frequency is reset.
+    ///
+    /// The returned Option will return an evicted value, if a value needed to
+    /// be evicted. This includes the old value, if the previously existing
+    /// value was present under the same key.
+    pub fn insert(&mut self, key: Key, value: Value) -> Option<Value> {
+        let mut evicted = self.remove(&key);
+
+        if let Some(capacity) = self.capacity {
+            // This never gets called if we had to evict an old value.
+            if capacity.get() <= self.len {
+                evicted = self.pop_lfu();
+            }
+        }
+
+        // Since an entry has a reference to its key, we've created a situation
+        // where we have self-referential data. We can't construct the entry
+        // before inserting it into the lookup table because the key may be
+        // moved when inserting it (so the memory address may become invalid)
+        // but we can't insert the entry without constructing the value first.
+        //
+        // As a result, we need to break this loop by performing the following:
+        //   - Insert an entry into the lookup mapping that points to a dangling
+        //     pointer.
+        //   - Obtain the _moved_ key pointer from the raw entry API
+        //   - Use this key pointer as the pointer for the entry, and overwrite
+        //     the dangling pointer with an actual value.
+        let key = Rc::new(key);
+        self.lookup.insert(Rc::clone(&key), NonNull::dangling());
+        let v = self.lookup.get_mut(&key).unwrap();
+        *v = self.freq_list.insert(key, value);
+
+        self.len += 1;
+        evicted
     }
 
     /// Gets a value and incrementing the internal frequency counter of that
@@ -103,78 +162,6 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         Some(&mut unsafe { entry.as_mut() }.value)
     }
 
-    /// Inserts a value into the cache using the provided key. If the value
-    /// already exists, then the value is replace with the provided value and
-    /// the frequency is reset.
-    ///
-    /// The returned Option will return an evicted value, if a value needed to
-    /// be evicted.
-    pub fn insert(&mut self, key: Key, value: Value) -> Option<Value> {
-        let hash = {
-            let mut hasher = self.lookup.hasher().build_hasher();
-            key.hash(&mut hasher);
-            hasher.finish()
-        };
-
-        self.remove(&key);
-
-        let mut evicted = None;
-        if let Some(capacity) = self.capacity {
-            if capacity.get() == self.len {
-                evicted = self.pop_lfu();
-            }
-        }
-
-        // Since an entry has a reference to its key, we've created a situation
-        // where we have self-referential data. We can't construct the entry
-        // before inserting it into the lookup table because the key may be
-        // moved when inserting it (so the memory address may become invalid)
-        // but we can't insert the entry without constructing the value first.
-        //
-        // As a result, we need to break this loop by performing the following:
-        //   - Insert an entry into the lookup mapping that points to a dangling
-        //     pointer.
-        //   - Obtain the _moved_ key pointer from the raw entry API
-        //   - Use this key pointer as the pointer for the entry, and overwrite
-        //     the dangling pointer with an actual value.
-        let key = Rc::new(key);
-        let mut entry = self
-            .lookup
-            .raw_entry_mut()
-            .from_key_hashed_nocheck(hash, &key)
-            .insert(Rc::clone(&key), NonNull::dangling());
-        let (_, v) = entry.get_key_value_mut();
-        *v = self.freq_list.insert(key, value);
-
-        self.len += 1;
-        evicted
-    }
-
-    /// Evicts the least frequently used value and returns it. If the cache is
-    /// empty, then this returns None. If there are multiple items that have an
-    /// equal access count, then the most recently added value is evicted.
-    pub fn pop_lfu(&mut self) -> Option<Value> {
-        if let Some(mut entry_ptr) = self.freq_list.pop_lfu() {
-            // SAFETY: This is fine since self is uniquely borrowed.
-            let key = unsafe { entry_ptr.as_ref().key.as_ref() };
-            self.lookup.remove(key);
-
-            // SAFETY: entry_ptr is guaranteed to be a live reference and is
-            // is separated from the data structure as a guarantee of pop_lfu.
-            // As a result, at this point, we're guaranteed that we have the
-            // only reference of entry_ptr.
-            return Some(unsafe { Box::from_raw(entry_ptr.as_mut()) }.value);
-        }
-        None
-    }
-
-    /// Peeks at the next value to be evicted, if there is one. This will not
-    /// increment the access counter for that value.
-    #[must_use]
-    pub fn peek_lfu(&self) -> Option<&Value> {
-        self.freq_list.peek_lfu()
-    }
-
     /// Removes a value from the cache by key, if it exists.
     pub fn remove(&mut self, key: &Key) -> Option<Value> {
         if let Some(mut node) = self.lookup.remove(key) {
@@ -186,6 +173,46 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         }
 
         None
+    }
+
+    /// Evicts the least frequently used value and returns it. If the cache is
+    /// empty, then this returns None. If there are multiple items that have an
+    /// equal access count, then the most recently added value is evicted.
+    #[inline]
+    pub fn pop_lfu(&mut self) -> Option<Value> {
+        self.pop_lfu_key_value().map(|(_, v)| v)
+    }
+
+    /// Events the least frequently used key-value pair and returns it. If the
+    /// cache is empty, then this returns None. If there are multiple items that
+    /// have an equal access count, then the most recently added key-value pair
+    /// is evicted.
+    pub fn pop_lfu_key_value(&mut self) -> Option<(Key, Value)> {
+        if let Some(mut entry_ptr) = self.freq_list.pop_lfu() {
+            // SAFETY: This is fine since self is uniquely borrowed.
+            let key = unsafe { entry_ptr.as_ref().key.as_ref() };
+            self.lookup.remove(key);
+
+            // SAFETY: entry_ptr is guaranteed to be a live reference and is
+            // is separated from the data structure as a guarantee of pop_lfu.
+            // As a result, at this point, we're guaranteed that we have the
+            // only reference of entry_ptr.
+            let entry = unsafe { Box::from_raw(entry_ptr.as_mut()) };
+            let key = match Rc::try_unwrap(entry.key) {
+                Ok(k) => k,
+                Err(_) => unsafe { unreachable_unchecked() },
+            };
+            return Some((key, entry.value));
+        }
+        None
+    }
+
+    /// Peeks at the next value to be evicted, if there is one. This will not
+    /// increment the access counter for that value.
+    #[inline]
+    #[must_use]
+    pub fn peek_lfu(&self) -> Option<&Value> {
+        self.freq_list.peek_lfu()
     }
 
     /// Removes the entry from the cache, cleaning up any values if necessary.
@@ -237,11 +264,12 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Returns the current capacity of the cache.
     #[inline]
     #[must_use]
-    pub fn capacity(&self) -> usize {
-        self.capacity.map(NonZeroUsize::get).unwrap_or_default()
+    pub fn capacity(&self) -> Option<NonZeroUsize> {
+        self.capacity
     }
 
-    /// Returns the current number of items in the cache.
+    /// Returns the current number of items in the cache. This is a constant
+    /// time operation.
     #[inline]
     #[must_use]
     pub fn len(&self) -> usize {
@@ -255,25 +283,111 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         self.len == 0
     }
 
-    /// Returns the frequencies that this cache has. This is an O(n) operation.
+    /// Returns if the cache is unbounded.
+    #[inline]
+    #[must_use]
+    pub fn is_unbounded(&self) -> bool {
+        self.capacity.is_none()
+    }
+
+    /// Returns the frequencies that this cache has. This is a linear time
+    /// operation.
     #[inline]
     #[must_use]
     pub fn frequencies(&self) -> Vec<usize> {
         self.freq_list.frequencies()
     }
 
-    /// Sets the new capacity. If the provided capacity is zero, then this
-    /// will turn the cache into an unbound one. If the new capacity is less
-    /// than the current capacity, the least frequently used items are evicted
-    /// until the number of items is equal to the capacity.
-    pub fn set_capacity(&mut self, new_capacity: usize) {
-        self.capacity = NonZeroUsize::new(new_capacity);
+    /// Sets the capacity to the amount of objects currently in the cache. If
+    /// no items were in the cache, the cache becomes unbounded.
+    #[inline]
+    pub fn shrink_to_fit(&mut self) {
+        self.set_capacity(self.len);
+    }
 
-        if let Some(capacity) = self.capacity {
-            while self.len > capacity.get() {
-                self.pop_lfu();
-            }
+    /// Returns an iterator over the keys of the LFU cache in any order.
+    #[inline]
+    pub fn keys(&self) -> impl Iterator<Item = &Key> + FusedIterator + '_ {
+        self.lookup.keys().map(|key| key.borrow())
+    }
+
+    /// Returns an iterator over the values of the LFU cache in any order. Note
+    /// that this does **not** increment the count for any of the values.
+    #[inline]
+    pub fn peek_values(&self) -> impl Iterator<Item = &Value> + FusedIterator + '_ {
+        self.lookup
+            .values()
+            .map(|value| &unsafe { value.as_ref() }.value)
+    }
+
+    /// Returns an iterator over the keys and values of the LFU cache in any
+    /// order. Note that this does **not** increment the count for any of the
+    /// values.
+    #[inline]
+    pub fn peek_iter(&self) -> impl Iterator<Item = (&Key, &Value)> + FusedIterator + '_ {
+        self.lookup
+            .iter()
+            .map(|(key, value)| (key.borrow(), &unsafe { value.as_ref() }.value))
+    }
+}
+
+impl<Key: Hash + Eq, Value> FromIterator<(Key, Value)> for LfuCache<Key, Value> {
+    /// Constructs a LFU cache with the capacity equal to the number of elements
+    /// in the iterator.
+    fn from_iter<T: IntoIterator<Item = (Key, Value)>>(iter: T) -> Self {
+        let mut cache = Self::unbounded();
+        for (k, v) in iter {
+            cache.insert(k, v);
         }
+        cache.shrink_to_fit();
+        cache
+    }
+}
+
+impl<Key: Hash + Eq, Value> Extend<(Key, Value)> for LfuCache<Key, Value> {
+    /// Inserts the items from the iterator into the cache. Note that this may
+    /// evict items if the number of elements in the iterator plus the number of
+    /// current items in the cache exceeds the capacity of the cache.
+    fn extend<T: IntoIterator<Item = (Key, Value)>>(&mut self, iter: T) {
+        for (k, v) in iter {
+            self.insert(k, v);
+        }
+    }
+}
+
+impl<Key: Hash + Eq, Value> IntoIterator for LfuCache<Key, Value> {
+    type Item = (Key, Value);
+
+    type IntoIter = LfuCacheIter<Key, Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        LfuCacheIter(self)
+    }
+}
+
+/// A consuming iterator over the key and values of an LFU cache, in order of
+/// least frequently used first.
+///
+/// This is constructed by calling [`LfuCache::into_iter`].
+pub struct LfuCacheIter<Key: Hash + Eq, Value>(LfuCache<Key, Value>);
+
+impl<Key: Hash + Eq, Value> Iterator for LfuCacheIter<Key, Value> {
+    type Item = (Key, Value);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.pop_lfu_key_value()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.0.len(), Some(self.0.len()))
+    }
+}
+
+impl<Key: Hash + Eq, Value> FusedIterator for LfuCacheIter<Key, Value> {}
+
+impl<Key: Hash + Eq, Value> ExactSizeIterator for LfuCacheIter<Key, Value> {
+    fn len(&self) -> usize {
+        self.0.len
     }
 }
 
@@ -381,7 +495,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         #[allow(clippy::option_if_let_else)]
         let mut head = if let Some(mut head) = self.head {
             // SAFETY: self is exclusively accessed
-            if unsafe { head.as_mut() }.frequency == 1 {
+            if unsafe { head.as_mut() }.frequency == 0 {
                 head
             } else {
                 self.init_front()
@@ -402,7 +516,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
             next: self.head,
             prev: None,
             elements: None,
-            frequency: 1,
+            frequency: 0,
         };
         let node = Box::new(node);
         let node = Box::leak(node).into();
@@ -610,6 +724,16 @@ mod get {
             assert!(cache.get(&i).is_none())
         }
     }
+
+    #[test]
+    fn get_mut() {
+        let mut cache = LfuCache::unbounded();
+        cache.insert(1, 2);
+        assert_eq!(cache.frequencies(), vec![0]);
+        *cache.get_mut(&1).unwrap() = 3;
+        assert_eq!(cache.frequencies(), vec![1]);
+        assert_eq!(cache.get(&1), Some(&3));
+    }
 }
 
 #[cfg(test)]
@@ -636,7 +760,7 @@ mod insert {
         cache.insert(1, 1);
         cache.get(&1);
         cache.insert(1, 1);
-        assert_eq!(cache.frequencies(), vec![1]);
+        assert_eq!(cache.frequencies(), vec![0]);
     }
 
     #[test]
@@ -647,6 +771,16 @@ mod insert {
             cache.insert(i, i + 100);
         }
     }
+
+    #[test]
+    fn insert_returns_evicted() {
+        let mut cache = LfuCache::with_capacity(1);
+        assert_eq!(cache.insert(1, 2), None);
+        for _ in 0..10 {
+            assert_eq!(cache.insert(3, 4), Some(2));
+            assert_eq!(cache.insert(1, 2), Some(4));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -654,7 +788,7 @@ mod pop {
     use super::LfuCache;
 
     #[test]
-    fn simple_pop() {
+    fn pop() {
         let mut cache = LfuCache::unbounded();
         for i in 0..100 {
             cache.insert(i, i + 100);
@@ -664,6 +798,13 @@ mod pop {
             assert_eq!(cache.lookup.len(), 100 - i);
             assert_eq!(cache.pop_lfu(), Some(200 - i - 1));
         }
+    }
+
+    #[test]
+    fn pop_empty() {
+        let mut cache = LfuCache::<i32, i32>::unbounded();
+        assert_eq!(None, cache.pop_lfu());
+        assert_eq!(None, cache.pop_lfu_key_value());
     }
 }
 
@@ -705,6 +846,8 @@ mod remove {
 
 #[cfg(test)]
 mod bookkeeping {
+    use std::num::NonZeroUsize;
+
     use super::LfuCache;
 
     #[test]
@@ -743,5 +886,20 @@ mod bookkeeping {
         assert_eq!(cache.freq_list.len, 2);
         cache.get(&3);
         assert_eq!(cache.freq_list.len, 1);
+    }
+
+    #[test]
+    fn unbounded_is_unbounded() {
+        assert!(LfuCache::<i32, i32>::unbounded().is_unbounded());
+        assert!(!LfuCache::<i32, i32>::with_capacity(3).is_unbounded());
+    }
+
+    #[test]
+    fn capacity_reports_internal_capacity() {
+        assert_eq!(LfuCache::<i32, i32>::unbounded().capacity(), None);
+        assert_eq!(
+            LfuCache::<i32, i32>::with_capacity(3).capacity(),
+            Some(NonZeroUsize::new(3).unwrap())
+        );
     }
 }

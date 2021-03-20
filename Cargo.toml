@@ -1,5 +1,5 @@
 [package]
-name = "lfu-cache"
+name = "lfu_cache"
 description = "A simple constant time LFU cache implementation"
 version = "0.1.0"
 authors = ["Edward Shen <code@eddie.sh>"]
@@ -13,9 +13,6 @@ include = ["src/lib.rs", "LICENSE-*", "README.md"]
 [profile.release]
 lto = true
 codegen-units = 1
-
-[dependencies]
-hashbrown = "0.11"
 
 [dev-dependencies]
 criterion = "0.3"
