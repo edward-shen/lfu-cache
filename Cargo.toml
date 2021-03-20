@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Edward Shen <code@eddie.sh>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
+include = ["src/lib.rs", "LICENSE-*", "README.md"]
 
 [profile.release]
 lto = true
