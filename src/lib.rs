@@ -1,4 +1,4 @@
-#![warn(clippy::pedantic, clippy::nursery)]
+#![warn(clippy::pedantic, clippy::nursery, clippy::cargo)]
 
 //! This crate provides an LRU cache with constant time insertion, fetching,
 //! and removing.
@@ -376,6 +376,9 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     }
 
     fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<Entry<Key, T>> {
+        // False positive: the alternative would need mutable borrowing of self
+        // in both closures, which isn't allowed
+        #[allow(clippy::option_if_let_else)]
         let mut head = if let Some(mut head) = self.head {
             // SAFETY: self is exclusively accessed
             if unsafe { head.as_mut() }.frequency == 1 {
