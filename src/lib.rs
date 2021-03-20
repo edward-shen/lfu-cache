@@ -1,3 +1,5 @@
+#![warn(clippy::pedantic, clippy::nursery)]
+
 //! This crate provides an LRU cache with constant time insertion, fetching,
 //! and removing.
 //!
@@ -34,9 +36,9 @@ unsafe impl<Key: Hash + Eq, Value> Sync for LfuCache<Key, Value> {}
 
 impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Creates a LFU cache with no bound. This turns the LFU cache into a very
-    /// expensive HashMap if the least frequently used item is never removed.
-    /// This is useful if you want to have fine-grain control over when the
-    /// LFU cache should evict. If a LFU cache was constructed using this
+    /// expensive [`HashMap`] if the least frequently used item is never
+    /// removed. This is useful if you want to have fine-grain control over when
+    /// the LFU cache should evict. If a LFU cache was constructed using this
     /// function, users should call [`Self::pop_lfu`] to remove the least
     /// frequently used item.
     ///
@@ -78,11 +80,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         Self {
             lookup: HashMap::new(),
             freq_list: FrequencyList::new(),
-            capacity: if capacity == 0 {
-                None
-            } else {
-                Some(NonZeroUsize::new(capacity).unwrap())
-            },
+            capacity: NonZeroUsize::new(capacity),
             len: 0,
         }
     }
@@ -91,9 +89,8 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// value, if it exists.
     pub fn get(&mut self, key: &Key) -> Option<&Value> {
         let entry = self.lookup.get(key)?;
-
         self.freq_list.update(*entry);
-
+        // SAFETY: This is fine because self is uniquely borrowed
         Some(&unsafe { entry.as_ref() }.value)
     }
 
@@ -101,9 +98,8 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// that value, if it exists.
     pub fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
         let entry = self.lookup.get_mut(key)?;
-
         self.freq_list.update(*entry);
-
+        // SAFETY: This is fine because self is uniquely borrowed
         Some(&mut unsafe { entry.as_mut() }.value)
     }
 
@@ -141,17 +137,14 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         //   - Obtain the _moved_ key pointer from the raw entry API
         //   - Use this key pointer as the pointer for the entry, and overwrite
         //     the dangling pointer with an actual value.
-        {
-            let key = Rc::new(key);
-            let mut entry = self
-                .lookup
-                .raw_entry_mut()
-                .from_key_hashed_nocheck(hash, &key)
-                .insert(Rc::clone(&key), NonNull::dangling());
-            let (_, v) = entry.get_key_value_mut();
-
-            *v = self.freq_list.insert(key, value);
-        }
+        let key = Rc::new(key);
+        let mut entry = self
+            .lookup
+            .raw_entry_mut()
+            .from_key_hashed_nocheck(hash, &key)
+            .insert(Rc::clone(&key), NonNull::dangling());
+        let (_, v) = entry.get_key_value_mut();
+        *v = self.freq_list.insert(key, value);
 
         self.len += 1;
         evicted
@@ -162,17 +155,22 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// equal access count, then the most recently added value is evicted.
     pub fn pop_lfu(&mut self) -> Option<Value> {
         if let Some(mut entry_ptr) = self.freq_list.pop_lfu() {
+            // SAFETY: This is fine since self is uniquely borrowed.
             let key = unsafe { entry_ptr.as_ref().key.as_ref() };
-            self.lookup.remove(key).unwrap();
-            // return Some(self.remove_entry_pointer(entry_ptr));
-            let node = unsafe { Box::from_raw(entry_ptr.as_mut()) };
-            return Some(node.value);
+            self.lookup.remove(key);
+
+            // SAFETY: entry_ptr is guaranteed to be a live reference and is
+            // is separated from the data structure as a guarantee of pop_lfu.
+            // As a result, at this point, we're guaranteed that we have the
+            // only reference of entry_ptr.
+            return Some(unsafe { Box::from_raw(entry_ptr.as_mut()) }.value);
         }
         None
     }
 
     /// Peeks at the next value to be evicted, if there is one. This will not
     /// increment the access counter for that value.
+    #[must_use]
     pub fn peek_lfu(&self) -> Option<&Value> {
         self.freq_list.peek_lfu()
     }
@@ -180,15 +178,21 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Removes a value from the cache by key, if it exists.
     pub fn remove(&mut self, key: &Key) -> Option<Value> {
         if let Some(mut node) = self.lookup.remove(key) {
-            let boxed = unsafe { Box::from_raw(node.as_mut()) };
-            return Some(self.remove_entry_pointer(boxed));
+            // SAFETY: We have unique access to self. At this point, we've
+            // removed the entry from the lookup map but haven't removed it from
+            // the frequency data structure, so we need to clean it up there
+            // before returning the value.
+            return Some(self.remove_entry_pointer(*unsafe { Box::from_raw(node.as_mut()) }));
         }
 
         None
     }
 
     /// Removes the entry from the cache, cleaning up any values if necessary.
-    fn remove_entry_pointer(&mut self, mut node: Box<Entry<Key, Value>>) -> Value {
+    fn remove_entry_pointer(&mut self, mut node: Entry<Key, Value>) -> Value {
+        // SAFETY: We have unique access to self, so we know that nothing else
+        // is currently accessing the data structure.
+
         if let Some(mut next) = node.next {
             let next = unsafe { next.as_mut() };
             next.prev = node.prev;
@@ -217,7 +221,10 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
 
             owner.next = None;
 
-            // Drop the node
+            // Drop the node, since the node is empty now.
+            // TODO: low frequency count optimization, where we don't dealloc
+            // very low frequency counts since we're likely to just realloc them
+            // sooner than later.
             unsafe { Box::from_raw(owner) };
             self.freq_list.len -= 1;
         }
@@ -273,6 +280,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
 impl<Key: Hash + Eq, Value> Drop for LfuCache<Key, Value> {
     fn drop(&mut self) {
         for ptr in self.lookup.values_mut() {
+            // SAFETY: self is exclusively accessed
             unsafe { Box::from_raw(ptr.as_mut()) };
         }
     }
@@ -308,6 +316,7 @@ impl<Key: Hash + Eq, T: Display> Display for FrequencyList<Key, T> {
 impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
     fn drop(&mut self) {
         if let Some(mut ptr) = self.head {
+            // SAFETY: self is exclusively accessed
             unsafe { Box::from_raw(ptr.as_mut()) };
         }
     }
@@ -336,6 +345,7 @@ impl<Key: Hash + Eq, T> Hash for Node<Key, T> {
 impl<Key: Hash + Eq, T> Drop for Node<Key, T> {
     fn drop(&mut self) {
         if let Some(mut ptr) = self.next {
+            // SAFETY: self is exclusively accessed
             unsafe { Box::from_raw(ptr.as_mut()) };
         }
     }
@@ -367,6 +377,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
     fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<Entry<Key, T>> {
         let mut head = if let Some(mut head) = self.head {
+            // SAFETY: self is exclusively accessed
             if unsafe { head.as_mut() }.frequency == 1 {
                 head
             } else {
@@ -378,6 +389,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
         let entry = Box::new(Entry::new(head, key, value));
         let entry = Box::leak(entry).into();
+        // SAFETY: self is exclusively accessed
         unsafe { head.as_mut() }.append(entry);
         entry
     }
@@ -392,8 +404,10 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         let node = Box::new(node);
         let node = Box::leak(node).into();
         if let Some(head) = self.head {
+            // SAFETY: self is exclusively accessed
             let next = unsafe { head.as_ref() }.next;
             if let Some(mut next) = next {
+                // SAFETY: self is exclusively accessed
                 let next = unsafe { next.as_mut() };
                 next.prev = Some(node);
             }
@@ -406,6 +420,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     fn update(&mut self, mut entry: NonNull<Entry<Key, T>>) {
         let entry = unsafe { entry.as_mut() };
         // Remove the entry from the frequency node list.
+        // SAFETY: self is exclusively accessed
         if let Some(mut prev) = entry.prev {
             unsafe { prev.as_mut() }.next = entry.next;
         } else {
@@ -418,12 +433,14 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
         // Generate the next frequency list node if it doesn't exist or isn't
         // n + 1 of the current node's frequency.
+        // SAFETY: self is exclusively accessed
         let freq_list_node = unsafe { entry.owner.as_mut() };
         let freq_list_node_freq = freq_list_node.frequency;
         if freq_list_node.next.is_none() {
             freq_list_node.create_increment();
             self.len += 1;
         } else if let Some(node) = freq_list_node.next {
+            // SAFETY: self is exclusively accessed
             let node_ptr = unsafe { node.as_ref() };
             if node_ptr.frequency != freq_list_node_freq + 1 {
                 freq_list_node.create_increment();
@@ -434,12 +451,14 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         // Drop frequency list node if it contains no elements
         if freq_list_node.elements.is_none() {
             if let Some(mut prev) = freq_list_node.prev {
+                // SAFETY: self is exclusively accessed
                 unsafe { prev.as_mut() }.next = freq_list_node.next;
             } else {
                 self.head = freq_list_node.next;
             }
 
             if let Some(mut next) = freq_list_node.next {
+                // SAFETY: self is exclusively accessed
                 unsafe { next.as_mut() }.prev = freq_list_node.prev;
             }
 
@@ -459,6 +478,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
     fn pop_lfu(&mut self) -> Option<NonNull<Entry<Key, T>>> {
         if let Some(mut node) = self.head {
+            // SAFETY: self is exclusively accessed
             return unsafe { node.as_mut() }.pop();
         }
 
@@ -467,6 +487,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
     fn peek_lfu(&self) -> Option<&T> {
         if let Some(ref node) = self.head {
+            // SAFETY: self is exclusively accessed
             return unsafe { node.as_ref() }.peek();
         }
 
@@ -497,6 +518,7 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
         let node: NonNull<_> = Box::leak(new_node).into();
         // Fix next element's previous reference to new node
         if let Some(mut next_node) = self.next {
+            // SAFETY: self is exclusively accessed
             let node_ptr = unsafe { next_node.as_mut() };
             node_ptr.prev = Some(node);
         }
@@ -506,9 +528,11 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
 
     fn pop(&mut self) -> Option<NonNull<Entry<Key, T>>> {
         if let Some(mut node_ptr) = self.elements {
+            // SAFETY: self is exclusively accessed
             let node = unsafe { node_ptr.as_mut() };
 
             if let Some(mut next) = node.next {
+                // SAFETY: self is exclusively accessed
                 let next = unsafe { next.as_mut() };
                 next.prev = None;
             }
@@ -536,9 +560,11 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
     fn append(&mut self, mut entry: NonNull<Entry<Key, T>>) {
         // Fix next
         if let Some(mut head) = self.elements {
+            // SAFETY: self is exclusively accessed
             let head_ptr = unsafe { head.as_mut() };
             head_ptr.prev = Some(entry);
         }
+        // SAFETY: self is exclusively accessed
         let entry_ptr = unsafe { entry.as_mut() };
         entry_ptr.next = self.elements;
 
