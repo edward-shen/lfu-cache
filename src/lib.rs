@@ -12,17 +12,18 @@
 //! can not make better use of the CPU cache in comparison to array-based
 //! containers.
 
-use hashbrown::{hash_map::RawEntryMut, HashMap};
-use std::fmt::Display;
+use hashbrown::HashMap;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
+use std::{fmt::Display, rc::Rc};
 
-/// A Least Frequently Used collection.
+/// A collection that, if limited to a certain capacity, will evict based on the
+/// least recently used value.
 #[derive(Default, Eq, PartialEq, Debug)]
 pub struct LfuCache<Key: Hash + Eq, Value> {
-    lookup: HashMap<Key, NonNull<Entry<Value>>>,
-    freq_list: FrequencyList<Value>,
+    lookup: HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>,
+    freq_list: FrequencyList<Key, Value>,
     capacity: Option<NonZeroUsize>,
     len: usize,
 }
@@ -88,7 +89,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Gets a value and incrementing the internal frequency counter of that
     /// value, if it exists.
     pub fn get(&mut self, key: &Key) -> Option<&Value> {
-        let entry = self.lookup.get(&key)?;
+        let entry = self.lookup.get(key)?;
 
         self.freq_list.update(*entry);
 
@@ -98,7 +99,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Gets a mutable value and incrementing the internal frequency counter of
     /// that value, if it exists.
     pub fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
-        let entry = self.lookup.get_mut(&key)?;
+        let entry = self.lookup.get_mut(key)?;
 
         self.freq_list.update(*entry);
 
@@ -127,14 +128,31 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
             }
         }
 
-        let entry = self.freq_list.insert(hash, value);
-        let lookup_entry = self
-            .lookup
-            .raw_entry_mut()
-            .from_key_hashed_nocheck(hash, &key);
-        lookup_entry.insert(key, entry);
-        self.len += 1;
+        // Since an entry has a reference to its key, we've created a situation
+        // where we have self-referential data. We can't construct the entry
+        // before inserting it into the lookup table because the key may be
+        // moved when inserting it (so the memory address may become invalid)
+        // but we can't insert the entry without constructing the value first.
+        //
+        // As a result, we need to break this loop by performing the following:
+        //   - Insert an entry into the lookup mapping that points to a dangling
+        //     pointer.
+        //   - Obtain the _moved_ key pointer from the raw entry API
+        //   - Use this key pointer as the pointer for the entry, and overwrite
+        //     the dangling pointer with an actual value.
+        {
+            let key = Rc::new(key);
+            let mut entry = self
+                .lookup
+                .raw_entry_mut()
+                .from_key_hashed_nocheck(hash, &key)
+                .insert(Rc::clone(&key), NonNull::dangling());
+            let (_, v) = entry.get_key_value_mut();
 
+            *v = self.freq_list.insert(key, value);
+        }
+
+        self.len += 1;
         evicted
     }
 
@@ -142,17 +160,13 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// empty, then this returns None. If there are multiple items that have an
     /// equal access count, then the most recently added value is evicted.
     pub fn pop_lfu(&mut self) -> Option<Value> {
-        if let Some(entry) = self.freq_list.pop_lfu() {
-            let lookup = self.lookup.raw_entry_mut().from_hash(entry.hash, |_| true);
-            if let RawEntryMut::Occupied(entry) = lookup {
-                entry.remove();
-            }
-
-            self.len -= 1;
-
-            return Some(entry.value);
+        if let Some(mut entry_ptr) = self.freq_list.pop_lfu() {
+            let key = unsafe { entry_ptr.as_ref().key.as_ref() };
+            self.lookup.remove(key).unwrap();
+            // return Some(self.remove_entry_pointer(entry_ptr));
+            let node = unsafe { Box::from_raw(entry_ptr.as_mut()) };
+            return Some(node.value);
         }
-
         None
     }
 
@@ -164,47 +178,52 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
 
     /// Removes a value from the cache by key, if it exists.
     pub fn remove(&mut self, key: &Key) -> Option<Value> {
-        if let Some(mut node) = self.lookup.remove(&key) {
-            let node = unsafe { node.as_mut() };
-            if let Some(mut next) = node.next {
-                let next = unsafe { next.as_mut() };
-                next.prev = node.prev;
-            }
-
-            if let Some(mut prev) = node.prev {
-                let prev = unsafe { prev.as_mut() };
-                prev.next = node.next;
-            } else {
-                unsafe { node.owner.as_mut() }.elements = node.next;
-            }
-
-            let owner = unsafe { node.owner.as_mut() };
-            if owner.elements.is_none() {
-                if let Some(mut next) = owner.next {
-                    let next = unsafe { next.as_mut() };
-                    next.prev = owner.prev;
-                }
-
-                if let Some(mut prev) = owner.prev {
-                    let prev = unsafe { prev.as_mut() };
-                    prev.next = owner.next;
-                } else {
-                    self.freq_list.head = owner.next;
-                }
-
-                owner.next = None;
-
-                // Drop the node
-                unsafe { Box::from_raw(owner) };
-                self.freq_list.len -= 1;
-            }
-
-            self.len -= 1;
-
-            return Some(unsafe { Box::from_raw(node) }.value);
+        if let Some(mut node) = self.lookup.remove(key) {
+            let boxed = unsafe { Box::from_raw(node.as_mut()) };
+            return Some(self.remove_entry_pointer(boxed));
         }
 
         None
+    }
+
+    /// Removes the entry from the cache, cleaning up any values if necessary.
+    fn remove_entry_pointer(&mut self, mut node: Box<Entry<Key, Value>>) -> Value {
+        if let Some(mut next) = node.next {
+            let next = unsafe { next.as_mut() };
+            next.prev = node.prev;
+        }
+
+        if let Some(mut prev) = node.prev {
+            let prev = unsafe { prev.as_mut() };
+            prev.next = node.next;
+        } else {
+            unsafe { node.owner.as_mut() }.elements = node.next;
+        }
+
+        let owner = unsafe { node.owner.as_mut() };
+        if owner.elements.is_none() {
+            if let Some(mut next) = owner.next {
+                let next = unsafe { next.as_mut() };
+                next.prev = owner.prev;
+            }
+
+            if let Some(mut prev) = owner.prev {
+                let prev = unsafe { prev.as_mut() };
+                prev.next = owner.next;
+            } else {
+                self.freq_list.head = owner.next;
+            }
+
+            owner.next = None;
+
+            // Drop the node
+            unsafe { Box::from_raw(owner) };
+            self.freq_list.len -= 1;
+        }
+
+        self.len -= 1;
+
+        node.value
     }
 
     /// Returns the current capacity of the cache.
@@ -259,12 +278,12 @@ impl<Key: Hash + Eq, Value> Drop for LfuCache<Key, Value> {
 }
 
 #[derive(Default, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-struct FrequencyList<T> {
-    head: Option<NonNull<Node<T>>>,
+struct FrequencyList<Key: Hash + Eq, T> {
+    head: Option<NonNull<Node<Key, T>>>,
     len: usize,
 }
 
-impl<T: Display> Display for FrequencyList<T> {
+impl<Key: Hash + Eq, T: Display> Display for FrequencyList<Key, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Total elements: {}", self.len)?;
         let mut cur_node = self.head;
@@ -285,7 +304,7 @@ impl<T: Display> Display for FrequencyList<T> {
     }
 }
 
-impl<T> Drop for FrequencyList<T> {
+impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
     fn drop(&mut self) {
         if let Some(mut ptr) = self.head {
             unsafe { Box::from_raw(ptr.as_mut()) };
@@ -294,26 +313,26 @@ impl<T> Drop for FrequencyList<T> {
 }
 
 #[derive(Default, Eq, Ord, PartialOrd, Debug)]
-struct Node<T> {
-    next: Option<NonNull<Node<T>>>,
-    prev: Option<NonNull<Node<T>>>,
-    elements: Option<NonNull<Entry<T>>>,
+struct Node<Key: Hash + Eq, T> {
+    next: Option<NonNull<Node<Key, T>>>,
+    prev: Option<NonNull<Node<Key, T>>>,
+    elements: Option<NonNull<Entry<Key, T>>>,
     frequency: usize,
 }
 
-impl<T> PartialEq for Node<T> {
+impl<Key: Hash + Eq, T> PartialEq for Node<Key, T> {
     fn eq(&self, other: &Self) -> bool {
         self.frequency == other.frequency
     }
 }
 
-impl<T> Hash for Node<T> {
+impl<Key: Hash + Eq, T> Hash for Node<Key, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.frequency);
     }
 }
 
-impl<T> Drop for Node<T> {
+impl<Key: Hash + Eq, T> Drop for Node<Key, T> {
     fn drop(&mut self) {
         if let Some(mut ptr) = self.next {
             unsafe { Box::from_raw(ptr.as_mut()) };
@@ -322,21 +341,30 @@ impl<T> Drop for Node<T> {
 }
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-struct Entry<T> {
-    next: Option<NonNull<Entry<T>>>,
-    prev: Option<NonNull<Entry<T>>>,
-    owner: NonNull<Node<T>>,
-    hash: u64,
+struct Entry<Key: Hash + Eq, T> {
+    /// We still need to keep a linked list implementation for O(1)
+    /// in-the-middle removal.
+    next: Option<NonNull<Entry<Key, T>>>,
+    prev: Option<NonNull<Entry<Key, T>>>,
+    /// Instead of traversing up to the frequency node, we just keep a reference
+    /// to the owning node. This ensures that entry movement is an O(1)
+    /// operation.
+    owner: NonNull<Node<Key, T>>,
+    /// We need to maintain a pointer to the key as we need to remove the
+    /// lookup table entry on lru popping, and we need the key to properly fetch
+    /// the correct entry (the hash itself is not guaranteed to return the
+    /// correct entry).
+    key: Rc<Key>,
     value: T,
 }
 
-impl<T> FrequencyList<T> {
+impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     #[inline]
-    const fn new() -> Self {
+    fn new() -> Self {
         Self { head: None, len: 0 }
     }
 
-    fn insert(&mut self, hash: u64, value: T) -> NonNull<Entry<T>> {
+    fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<Entry<Key, T>> {
         let mut head = if let Some(mut head) = self.head {
             if unsafe { head.as_mut() }.frequency == 1 {
                 head
@@ -347,13 +375,13 @@ impl<T> FrequencyList<T> {
             self.init_front()
         };
 
-        let entry = Box::new(Entry::new(head, hash, value));
+        let entry = Box::new(Entry::new(head, key, value));
         let entry = Box::leak(entry).into();
         unsafe { head.as_mut() }.append(entry);
         entry
     }
 
-    fn init_front(&mut self) -> NonNull<Node<T>> {
+    fn init_front(&mut self) -> NonNull<Node<Key, T>> {
         let node = Node {
             next: self.head,
             prev: None,
@@ -374,7 +402,7 @@ impl<T> FrequencyList<T> {
         node
     }
 
-    fn update(&mut self, mut entry: NonNull<Entry<T>>) {
+    fn update(&mut self, mut entry: NonNull<Entry<Key, T>>) {
         let entry = unsafe { entry.as_mut() };
         // Remove the entry from the frequency node list.
         if let Some(mut prev) = entry.prev {
@@ -419,7 +447,7 @@ impl<T> FrequencyList<T> {
             unsafe { boxed.next.unwrap().as_mut() }.append(entry.into());
             // Because our drop implementation of Node recursively frees the
             // the next value, we need to unset the next value before dropping
-            // the box, else we accidentally free too much.
+            // the box lest we free the entire list.
             boxed.next = None;
             self.len -= 1;
         } else {
@@ -428,7 +456,7 @@ impl<T> FrequencyList<T> {
         }
     }
 
-    fn pop_lfu(&mut self) -> Option<Box<Entry<T>>> {
+    fn pop_lfu(&mut self) -> Option<NonNull<Entry<Key, T>>> {
         if let Some(mut node) = self.head {
             return unsafe { node.as_mut() }.pop();
         }
@@ -457,7 +485,7 @@ impl<T> FrequencyList<T> {
     }
 }
 
-impl<T> Node<T> {
+impl<Key: Hash + Eq, T> Node<Key, T> {
     fn create_increment(&mut self) {
         let new_node = Box::new(Self {
             next: self.next,
@@ -475,20 +503,21 @@ impl<T> Node<T> {
         self.next = Some(node);
     }
 
-    fn pop(&mut self) -> Option<Box<Entry<T>>> {
-        if let Some(mut node) = self.elements {
-            let node = unsafe { node.as_mut() };
+    fn pop(&mut self) -> Option<NonNull<Entry<Key, T>>> {
+        if let Some(mut node_ptr) = self.elements {
+            let node = unsafe { node_ptr.as_mut() };
 
             if let Some(mut next) = node.next {
-                unsafe { next.as_mut() }.prev = None;
+                let next = unsafe { next.as_mut() };
+                next.prev = None;
             }
+
             self.elements = node.next;
 
             node.next = None;
             node.prev = None;
 
-            let boxed = unsafe { Box::from_raw(node) };
-            return Some(boxed);
+            return Some(node_ptr);
         }
 
         None
@@ -503,7 +532,7 @@ impl<T> Node<T> {
         None
     }
 
-    fn append(&mut self, mut entry: NonNull<Entry<T>>) {
+    fn append(&mut self, mut entry: NonNull<Entry<Key, T>>) {
         // Fix next
         if let Some(mut head) = self.elements {
             let head_ptr = unsafe { head.as_mut() };
@@ -521,20 +550,20 @@ impl<T> Node<T> {
     }
 }
 
-impl<T> Entry<T> {
+impl<Key: Hash + Eq, T> Entry<Key, T> {
     #[must_use]
-    const fn new(owner: NonNull<Node<T>>, hash: u64, value: T) -> Self {
+    fn new(owner: NonNull<Node<Key, T>>, key: Rc<Key>, value: T) -> Self {
         Self {
             next: None,
             prev: None,
             owner,
-            hash,
+            key,
             value,
         }
     }
 }
 
-impl<T: Display> Display for Entry<T> {
+impl<Key: Hash + Eq, T: Display> Display for Entry<Key, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
@@ -558,7 +587,7 @@ mod insert {
     use super::LfuCache;
 
     #[test]
-    fn simple_insert() {
+    fn insert_unbounded() {
         let mut cache = LfuCache::unbounded();
 
         for i in 0..100 {
@@ -579,6 +608,15 @@ mod insert {
         cache.insert(1, 1);
         assert_eq!(cache.frequencies(), vec![1]);
     }
+
+    #[test]
+    fn insert_bounded() {
+        let mut cache = LfuCache::with_capacity(20);
+
+        for i in 0..100 {
+            cache.insert(i, i + 100);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -593,6 +631,7 @@ mod pop {
         }
 
         for i in 0..100 {
+            assert_eq!(cache.lookup.len(), 100 - i);
             assert_eq!(cache.pop_lfu(), Some(200 - i - 1));
         }
     }
@@ -623,16 +662,11 @@ mod remove {
         cache.insert(1, 2);
         cache.insert(3, 4);
 
-        println!("{}", cache.freq_list);
         assert_eq!(cache.remove(&1), Some(2));
-        println!("{}", cache.freq_list);
 
         assert!(!cache.is_empty());
-        assert_eq!(cache.freq_list.len, 1);
 
-        println!("{}", cache.freq_list);
         assert_eq!(cache.remove(&3), Some(4));
-        println!("{}", cache.freq_list);
 
         assert!(cache.is_empty());
         assert_eq!(cache.freq_list.len, 0);
