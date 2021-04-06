@@ -15,14 +15,15 @@
 //! can not make better use of the CPU cache in comparison to array-based
 //! containers.
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
+use std::hint::unreachable_unchecked;
 use std::iter::{FromIterator, FusedIterator};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
-use std::{borrow::Borrow, hint::unreachable_unchecked};
 
 /// A collection that, if limited to a certain capacity, will evict based on the
 /// least recently used value.
