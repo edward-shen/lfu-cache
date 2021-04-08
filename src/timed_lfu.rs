@@ -5,6 +5,7 @@ use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use crate::iter::LfuCacheIter;
 use crate::lfu::LfuCache;
 
 /// A LFU cache with additional eviction conditions based on the time an entry
@@ -319,5 +320,26 @@ impl<Key: Hash + Eq> PartialOrd for ExpirationSetEntry<Key> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl<Key: Hash + Eq, Value> Extend<(Key, Value)> for TimedLfuCache<Key, Value> {
+    /// Inserts the items from the iterator into the cache. Note that this may
+    /// evict items if the number of elements in the iterator plus the number of
+    /// current items in the cache exceeds the capacity of the cache.
+    fn extend<T: IntoIterator<Item = (Key, Value)>>(&mut self, iter: T) {
+        for (k, v) in iter {
+            self.insert(k, v);
+        }
+    }
+}
+
+impl<Key: Hash + Eq, Value> IntoIterator for TimedLfuCache<Key, Value> {
+    type Item = (Key, Value);
+
+    type IntoIter = LfuCacheIter<Key, Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        LfuCacheIter(self.cache)
     }
 }

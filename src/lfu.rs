@@ -7,6 +7,8 @@ use std::iter::{FromIterator, FusedIterator};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
+
+use crate::LfuCacheIter;
 /// A collection that, if limited to a certain capacity, will evict based on the
 /// least recently used value.
 // Note that Default is _not_ implemented. This is intentional, as most people
@@ -376,34 +378,6 @@ impl<Key: Hash + Eq, Value> IntoIterator for LfuCache<Key, Value> {
 
     fn into_iter(self) -> Self::IntoIter {
         LfuCacheIter(self)
-    }
-}
-
-/// A consuming iterator over the key and values of an LFU cache, in order of
-/// least frequently used first.
-///
-/// This is constructed by calling [`LfuCache::into_iter`].
-// This is re-exported at the crate root, so this lint can be safely ignored.
-#[allow(clippy::module_name_repetitions)]
-pub struct LfuCacheIter<Key: Hash + Eq, Value>(LfuCache<Key, Value>);
-
-impl<Key: Hash + Eq, Value> Iterator for LfuCacheIter<Key, Value> {
-    type Item = (Key, Value);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.pop_lfu_key_value()
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.0.len(), Some(self.0.len()))
-    }
-}
-
-impl<Key: Hash + Eq, Value> FusedIterator for LfuCacheIter<Key, Value> {}
-
-impl<Key: Hash + Eq, Value> ExactSizeIterator for LfuCacheIter<Key, Value> {
-    fn len(&self) -> usize {
-        self.0.len
     }
 }
 

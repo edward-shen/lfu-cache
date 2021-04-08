@@ -15,8 +15,10 @@
 //! can not make better use of the CPU cache in comparison to array-based
 //! containers.
 
+mod iter;
 mod lfu;
 mod timed_lfu;
 
+pub use iter::LfuCacheIter;
 pub use lfu::LfuCache;
 pub use timed_lfu::TimedLfuCache;
