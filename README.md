@@ -1,7 +1,7 @@
 # lfu-cache
 
-A simple implementation of a constant time Least Frequently Used (LFU) cache
-roughly based on the [paper by Shah, Mitra, and Matani][paper].
+An implementation of a constant time Least Frequently Used (LFU) cache roughly
+based on the [paper by Shah, Mitra, and Matani][paper].
 
 ## Example
 
@@ -44,7 +44,7 @@ assert_eq!(cache.pop_lfu(), Some(3));
 
 ## Alternatives
 
-- Consider the [`lfu`] crate for an implementation writting in only safe Rust.
+- Consider the [`lfu`] crate for an implementation written in only safe Rust.
 - Consider [`matthusifer/lfu_rs`][matt_lfu] for another implementation of the
   same paper.
 

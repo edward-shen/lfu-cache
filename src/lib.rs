@@ -25,6 +25,9 @@ use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
+mod timed_lfu;
+pub use timed_lfu::TimedLfuCache;
+
 /// A collection that, if limited to a certain capacity, will evict based on the
 /// least recently used value.
 // Note that Default is _not_ implemented. This is intentional, as most people
@@ -108,13 +111,19 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     }
 
     /// Inserts a value into the cache using the provided key. If the value
-    /// already exists, then the value is replace with the provided value and
+    /// already exists, then the value is replaced with the provided value and
     /// the frequency is reset.
     ///
-    /// The returned Option will return an evicted value, if a value needed to
+    /// The returned Option will contain an evicted value, if a value needed to
     /// be evicted. This includes the old value, if the previously existing
     /// value was present under the same key.
+    #[inline]
     pub fn insert(&mut self, key: Key, value: Value) -> Option<Value> {
+        self.insert_rc(Rc::new(key), value)
+    }
+
+    /// Like insert, but with an shared key instead.
+    pub(crate) fn insert_rc(&mut self, key: Rc<Key>, value: Value) -> Option<Value> {
         let mut evicted = self.remove(&key);
 
         if let Some(capacity) = self.capacity {
@@ -136,7 +145,6 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         //   - Obtain the _moved_ key pointer from the raw entry API
         //   - Use this key pointer as the pointer for the entry, and overwrite
         //     the dangling pointer with an actual value.
-        let key = Rc::new(key);
         self.lookup.insert(Rc::clone(&key), NonNull::dangling());
         let v = self.lookup.get_mut(&key).unwrap();
         *v = self.freq_list.insert(key, value);
@@ -147,20 +155,34 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
 
     /// Gets a value and incrementing the internal frequency counter of that
     /// value, if it exists.
+    #[inline]
     pub fn get(&mut self, key: &Key) -> Option<&Value> {
+        self.get_rc_key_value(key).map(|(_, v)| v)
+    }
+
+    /// Like `get`, but also returns the Rc as well.
+    pub(crate) fn get_rc_key_value(&mut self, key: &Key) -> Option<(Rc<Key>, &Value)> {
         let entry = self.lookup.get(key)?;
         self.freq_list.update(*entry);
         // SAFETY: This is fine because self is uniquely borrowed
-        Some(&unsafe { entry.as_ref() }.value)
+        let entry = unsafe { entry.as_ref() };
+        Some((Rc::clone(&entry.key), &entry.value))
     }
 
     /// Gets a mutable value and incrementing the internal frequency counter of
     /// that value, if it exists.
+    #[inline]
     pub fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
+        self.get_rc_key_value_mut(key).map(|(_, v)| v)
+    }
+
+    /// Like `get_mut`, but also returns the Rc as well.
+    pub(crate) fn get_rc_key_value_mut(&mut self, key: &Key) -> Option<(Rc<Key>, &mut Value)> {
         let entry = self.lookup.get_mut(key)?;
         self.freq_list.update(*entry);
         // SAFETY: This is fine because self is uniquely borrowed
-        Some(&mut unsafe { entry.as_mut() }.value)
+        let entry = unsafe { entry.as_mut() };
+        Some((Rc::clone(&entry.key), &mut entry.value))
     }
 
     /// Removes a value from the cache by key, if it exists.
