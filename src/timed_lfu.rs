@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use crate::LfuCache;
+use crate::lfu::LfuCache;
 
 /// A LFU cache with additional eviction conditions based on the time an entry
 /// has been in cache.
