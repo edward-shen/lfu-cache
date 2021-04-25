@@ -11,7 +11,8 @@ use crate::lfu::LfuCache;
 /// A LFU cache with additional eviction conditions based on the time an entry
 /// has been in cache.
 ///
-/// Note that the performance of this is O(log n).
+/// Note that the performance of this cache for all operations that evict
+/// expired entries is O(log n).
 // This is re-exported at the crate root, so this lint can be safely ignored.
 #[allow(clippy::module_name_repetitions)]
 pub struct TimedLfuCache<Key: Hash + Eq, Value> {
@@ -170,6 +171,13 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
         self.cache.pop_lfu_key_value_frequency()
     }
 
+    /// Clears the cache, returning the iterator of the previous cached values.
+    #[inline]
+    pub fn clear(&mut self) -> LfuCacheIter<Key, Value> {
+        self.expiry_set.clear();
+        self.cache.clear()
+    }
+
     /// Peeks at the next value to be evicted, if there is one. This will not
     /// increment the access counter for that value, or evict expired entries.
     #[inline]
@@ -266,15 +274,18 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
     pub fn evict_expired(&mut self) {
         if let Some(duration) = self.expiration {
             let cut_off = Instant::now() - duration;
+            let mut break_next = false;
             let mut drain_key = None;
             for key in &self.expiry_set {
-                if cut_off <= key.1 {
+                if break_next {
                     // Necessarily needs to clone here, as otherwise the borrow
                     // on self.expiry_set lasts for drain_key's lifetime and
                     // we need to mutably borrow later
                     drain_key = Some(key.clone());
                     break;
                 }
+
+                break_next = key.1 <= cut_off;
             }
 
             if let Some(key) = drain_key {
@@ -285,6 +296,9 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
                 for ExpirationSetEntry(key, _) in to_evict {
                     self.cache.remove(&key);
                 }
+            } else if break_next {
+                // all entries are stale
+                self.clear();
             }
         }
     }
@@ -341,5 +355,37 @@ impl<Key: Hash + Eq, Value> IntoIterator for TimedLfuCache<Key, Value> {
 
     fn into_iter(self) -> Self::IntoIter {
         LfuCacheIter(self.cache)
+    }
+}
+
+#[cfg(test)]
+mod timed {
+    use crate::TimedLfuCache;
+    use std::time::Duration;
+
+    #[test]
+    fn old_items_are_evicted() {
+        let duration = Duration::from_millis(250);
+        let mut cache = TimedLfuCache::with_expiration(duration);
+        cache.insert(1, 2);
+        assert_eq!(cache.get(&1), Some(&2));
+        std::thread::sleep(duration * 2);
+        assert!(cache.get(&1).is_none());
+    }
+
+    #[test]
+    #[ignore]
+    fn non_expired_remains() {
+        let duration = Duration::from_millis(250);
+        let mut cache = TimedLfuCache::with_expiration(duration);
+        cache.insert(1, 2);
+        assert_eq!(cache.get(&1), Some(&2));
+        std::thread::sleep(duration / 2);
+        cache.insert(3, 4);
+        assert_eq!(cache.get(&1), Some(&2));
+        assert_eq!(cache.get(&3), Some(&4));
+        std::thread::sleep(duration + duration / 4);
+        assert!(cache.get(&1).is_none());
+        assert_eq!(cache.get(&3), Some(&4));
     }
 }

@@ -238,6 +238,13 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         None
     }
 
+    /// Clears the cache, returning the iterator of the previous cached values.
+    pub fn clear(&mut self) -> LfuCacheIter<Key, Value> {
+        let mut to_return = Self::with_capacity(self.capacity.map_or(0, NonZeroUsize::get));
+        std::mem::swap(&mut to_return, self);
+        to_return.into_iter()
+    }
+
     /// Peeks at the next value to be evicted, if there is one. This will not
     /// increment the access counter for that value.
     #[inline]
@@ -614,6 +621,10 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
             }
         }
 
+        // TODO: move the insert item into next_owner lines up here.
+        // This would be here but for some reason it works on nightly (1.53) but
+        // not on stable (1.51)
+
         // Drop frequency list node if it contains no elements
         if freq_list_node.elements.is_none() {
             if let Some(mut prev) = freq_list_node.prev {
@@ -629,8 +640,10 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
             }
 
             let mut boxed = unsafe { Box::from_raw(freq_list_node) };
+
             // Insert item into next_owner
             unsafe { boxed.next.unwrap().as_mut() }.append(entry.into());
+
             // Because our drop implementation of Node recursively frees the
             // the next value, we need to unset the next value before dropping
             // the box lest we free the entire list.
@@ -969,5 +982,23 @@ mod bookkeeping {
             LfuCache::<i32, i32>::with_capacity(3).capacity(),
             Some(NonZeroUsize::new(3).unwrap())
         );
+    }
+
+    #[test]
+    fn clear_is_ok() {
+        let mut cache = LfuCache::unbounded();
+        for i in 0..10 {
+            cache.insert(i, i);
+        }
+
+        assert!(!cache.is_empty());
+
+        cache.clear();
+
+        assert!(cache.is_empty());
+
+        for i in 0..10 {
+            assert!(cache.get(&i).is_none());
+        }
     }
 }
