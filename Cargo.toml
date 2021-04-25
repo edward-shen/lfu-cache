@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/edward-shen/lfu-cache"
 keywords = ["lfu", "cache", "least", "frequently", "used"]
 categories = ["data-structures", "caching"]
-include = ["src/lib.rs", "LICENSE-*", "README.md"]
+include = ["src/*", "LICENSE-*", "README.md"]
 
 [profile.release]
 lto = true
