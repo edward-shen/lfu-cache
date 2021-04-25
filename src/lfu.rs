@@ -782,6 +782,15 @@ mod get {
         assert_eq!(cache.frequencies(), vec![1]);
         assert_eq!(cache.get(&1), Some(&3));
     }
+
+    #[test]
+    fn getting_is_ok_after_adding_other_value() {
+        let mut cache = LfuCache::unbounded();
+        cache.insert(1, 2);
+        assert_eq!(cache.get(&1), Some(&2));
+        cache.insert(3, 4);
+        assert_eq!(cache.get(&1), Some(&2));
+    }
 }
 
 #[cfg(test)]

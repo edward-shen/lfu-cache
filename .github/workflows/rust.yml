@@ -26,4 +26,4 @@ jobs:
     - name: Build
       run: cargo build --verbose
     - name: Run miri tests
-      run: cargo +nightly miri test
+      run: MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly miri test
