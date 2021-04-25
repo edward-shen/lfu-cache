@@ -554,15 +554,16 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     }
 
     fn init_front(&mut self) -> NonNull<Node<Key, T>> {
-        let node = Node {
+        let node = Box::new(Node {
             next: self.head,
             prev: None,
             elements: None,
             frequency: 0,
-        };
-        let node = Box::new(node);
+        });
+
         let node = Box::leak(node).into();
-        if let Some(head) = self.head {
+
+        if let Some(mut head) = self.head {
             // SAFETY: self is exclusively accessed
             let next = unsafe { head.as_ref() }.next;
             if let Some(mut next) = next {
@@ -570,15 +571,20 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
                 let next = unsafe { next.as_mut() };
                 next.prev = Some(node);
             }
+
+            let head = unsafe { head.as_mut() };
+            head.prev = Some(node);
         }
+
         self.head = Some(node);
         self.len += 1;
+
         node
     }
 
     fn update(&mut self, mut entry: NonNull<Entry<Key, T>>) {
         let entry = unsafe { entry.as_mut() };
-        // Remove the entry from the frequency node list.
+        // Remove the entry from the node.
         // SAFETY: self is exclusively accessed
         if let Some(mut prev) = entry.prev {
             unsafe { prev.as_mut() }.next = entry.next;
