@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::hint::unreachable_unchecked;
 use std::iter::{FromIterator, FusedIterator};
@@ -13,14 +13,29 @@ use crate::LfuCacheIter;
 /// least recently used value.
 // Note that Default is _not_ implemented. This is intentional, as most people
 // likely don't want an unbounded LFU cache by default.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq)]
 // This is re-exported at the crate root, so this lint can be safely ignored.
 #[allow(clippy::module_name_repetitions)]
 pub struct LfuCache<Key: Hash + Eq, Value> {
-    lookup: HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>,
+    lookup: LookupMap<Key, Value>,
     freq_list: FrequencyList<Key, Value>,
     capacity: Option<NonZeroUsize>,
     len: usize,
+}
+
+#[derive(Eq, PartialEq)]
+struct LookupMap<Key: Hash + Eq, Value>(HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>);
+
+impl<Key: Hash + Eq + Debug, Value> Debug for LookupMap<Key, Value> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut dbg = f.debug_struct("LookupMap");
+        for (key, value) in &self.0 {
+            dbg.field(&format!("{:?}", key), &unsafe {
+                value.as_ref().owner.as_ref().frequency
+            });
+        }
+        dbg.finish()
+    }
 }
 
 unsafe impl<Key: Hash + Eq, Value> Send for LfuCache<Key, Value> {}
@@ -55,7 +70,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            lookup: HashMap::with_capacity(capacity),
+            lookup: LookupMap(HashMap::with_capacity(capacity)),
             freq_list: FrequencyList::new(),
             capacity: NonZeroUsize::new(capacity),
             len: 0,
@@ -105,7 +120,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         self.insert_rc(Rc::new(key), value)
     }
 
-    /// Like insert, but with an shared key instead.
+    /// Like [`Self::insert`], but with an shared key instead.
     pub(crate) fn insert_rc(&mut self, key: Rc<Key>, value: Value) -> Option<Value> {
         let mut evicted = self.remove(&key);
 
@@ -128,8 +143,8 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         //   - Obtain the _moved_ key pointer from the raw entry API
         //   - Use this key pointer as the pointer for the entry, and overwrite
         //     the dangling pointer with an actual value.
-        self.lookup.insert(Rc::clone(&key), NonNull::dangling());
-        let v = self.lookup.get_mut(&key).unwrap();
+        self.lookup.0.insert(Rc::clone(&key), NonNull::dangling());
+        let v = self.lookup.0.get_mut(&key).unwrap();
         *v = self.freq_list.insert(key, value);
 
         self.len += 1;
@@ -143,9 +158,9 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         self.get_rc_key_value(key).map(|(_, v)| v)
     }
 
-    /// Like `get`, but also returns the Rc as well.
+    /// Like [`Self::get`], but also returns the Rc as well.
     pub(crate) fn get_rc_key_value(&mut self, key: &Key) -> Option<(Rc<Key>, &Value)> {
-        let entry = self.lookup.get(key)?;
+        let entry = self.lookup.0.get(key)?;
         self.freq_list.update(*entry);
         // SAFETY: This is fine because self is uniquely borrowed
         let entry = unsafe { entry.as_ref() };
@@ -161,7 +176,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
 
     /// Like `get_mut`, but also returns the Rc as well.
     pub(crate) fn get_rc_key_value_mut(&mut self, key: &Key) -> Option<(Rc<Key>, &mut Value)> {
-        let entry = self.lookup.get_mut(key)?;
+        let entry = self.lookup.0.get_mut(key)?;
         self.freq_list.update(*entry);
         // SAFETY: This is fine because self is uniquely borrowed
         let entry = unsafe { entry.as_mut() };
@@ -170,7 +185,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
 
     /// Removes a value from the cache by key, if it exists.
     pub fn remove(&mut self, key: &Key) -> Option<Value> {
-        if let Some(mut node) = self.lookup.remove(key) {
+        if let Some(mut node) = self.lookup.0.remove(key) {
             // SAFETY: We have unique access to self. At this point, we've
             // removed the entry from the lookup map but haven't removed it from
             // the frequency data structure, so we need to clean it up there
@@ -206,7 +221,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         if let Some(mut entry_ptr) = self.freq_list.pop_lfu() {
             // SAFETY: This is fine since self is uniquely borrowed.
             let key = unsafe { entry_ptr.as_ref().key.as_ref() };
-            self.lookup.remove(key);
+            self.lookup.0.remove(key);
 
             // SAFETY: entry_ptr is guaranteed to be a live reference and is
             // is separated from the data structure as a guarantee of pop_lfu.
@@ -271,7 +286,6 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
             unsafe { Box::from_raw(owner) };
             self.freq_list.len -= 1;
         }
-
         self.len -= 1;
 
         node.value
@@ -324,7 +338,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Returns an iterator over the keys of the LFU cache in any order.
     #[inline]
     pub fn keys(&self) -> impl Iterator<Item = &Key> + FusedIterator + '_ {
-        self.lookup.keys().map(|key| key.borrow())
+        self.lookup.0.keys().map(|key| key.borrow())
     }
 
     /// Returns an iterator over the values of the LFU cache in any order. Note
@@ -332,6 +346,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     #[inline]
     pub fn peek_values(&self) -> impl Iterator<Item = &Value> + FusedIterator + '_ {
         self.lookup
+            .0
             .values()
             .map(|value| &unsafe { value.as_ref() }.value)
     }
@@ -342,8 +357,20 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     #[inline]
     pub fn peek_iter(&self) -> impl Iterator<Item = (&Key, &Value)> + FusedIterator + '_ {
         self.lookup
+            .0
             .iter()
             .map(|(key, value)| (key.borrow(), &unsafe { value.as_ref() }.value))
+    }
+}
+
+impl<Key: Hash + Eq + Debug, Value> Debug for LfuCache<Key, Value> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut dbg = f.debug_struct("LfuCache");
+        dbg.field("len", &self.len);
+        dbg.field("capacity", &self.capacity);
+        dbg.field("freq_list", &self.freq_list);
+        dbg.field("lookup_map", &self.lookup);
+        dbg.finish()
     }
 }
 
@@ -383,21 +410,21 @@ impl<Key: Hash + Eq, Value> IntoIterator for LfuCache<Key, Value> {
 
 impl<Key: Hash + Eq, Value> Drop for LfuCache<Key, Value> {
     fn drop(&mut self) {
-        for ptr in self.lookup.values_mut() {
+        for ptr in self.lookup.0.values_mut() {
             // SAFETY: self is exclusively accessed
             unsafe { Box::from_raw(ptr.as_mut()) };
         }
     }
 }
 
-#[derive(Default, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[derive(Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 struct FrequencyList<Key: Hash + Eq, T> {
     head: Option<NonNull<Node<Key, T>>>,
     len: usize,
 }
 
 impl<Key: Hash + Eq, T: Display> Display for FrequencyList<Key, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Total elements: {}", self.len)?;
         let mut cur_node = self.head;
 
@@ -423,6 +450,25 @@ impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
             // SAFETY: self is exclusively accessed
             unsafe { Box::from_raw(ptr.as_mut()) };
         }
+    }
+}
+
+impl<Key: Hash + Eq, T> Debug for FrequencyList<Key, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut dbg = f.debug_struct("FrequencyList");
+        dbg.field("len", &self.len);
+
+        let mut node = self.head;
+        while let Some(cur_node) = node {
+            let cur_node = unsafe { cur_node.as_ref() };
+            dbg.field(
+                &format!("node freq {} num elements", &cur_node.frequency),
+                &cur_node.len(),
+            );
+            node = cur_node.next;
+        }
+
+        dbg.finish()
     }
 }
 
@@ -471,6 +517,12 @@ struct Entry<Key: Hash + Eq, T> {
     /// correct entry).
     key: Rc<Key>,
     value: T,
+}
+
+impl<Key: Hash + Eq, T: Display> Display for Entry<Key, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
 }
 
 impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
@@ -542,6 +594,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         // n + 1 of the current node's frequency.
         // SAFETY: self is exclusively accessed
         let freq_list_node = unsafe { entry.owner.as_mut() };
+
         let freq_list_node_freq = freq_list_node.frequency;
         if freq_list_node.next.is_none() {
             freq_list_node.create_increment();
@@ -616,13 +669,17 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
 impl<Key: Hash + Eq, T> Node<Key, T> {
     fn create_increment(&mut self) {
+        // Initialize new node with links to current and next's next
         let new_node = Box::new(Self {
             next: self.next,
             prev: Some(self.into()),
             elements: None,
             frequency: self.frequency + 1,
         });
+
+        // Fix links to point to new node
         let node: NonNull<_> = Box::leak(new_node).into();
+
         // Fix next element's previous reference to new node
         if let Some(mut next_node) = self.next {
             // SAFETY: self is exclusively accessed
@@ -664,6 +721,7 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
         None
     }
 
+    /// Pushes the entry to the front of the list
     fn append(&mut self, mut entry: NonNull<Entry<Key, T>>) {
         // Fix next
         if let Some(mut head) = self.elements {
@@ -694,12 +752,6 @@ impl<Key: Hash + Eq, T> Entry<Key, T> {
             key,
             value,
         }
-    }
-}
-
-impl<Key: Hash + Eq, T: Display> Display for Entry<Key, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
     }
 }
 
@@ -785,7 +837,7 @@ mod pop {
         }
 
         for i in 0..100 {
-            assert_eq!(cache.lookup.len(), 100 - i);
+            assert_eq!(cache.lookup.0.len(), 100 - i);
             assert_eq!(cache.pop_lfu(), Some(200 - i - 1));
         }
     }
