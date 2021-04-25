@@ -746,6 +746,17 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
         entry_ptr.prev = None;
         self.elements = Some(entry);
     }
+
+    fn len(&self) -> usize {
+        let mut count = 0;
+        let mut head = self.elements;
+        while let Some(cur_node) = head {
+            let cur_node = unsafe { cur_node.as_ref() };
+            count += 1;
+            head = cur_node.next;
+        }
+        count
+    }
 }
 
 impl<Key: Hash + Eq, T> Entry<Key, T> {
