@@ -481,8 +481,8 @@ impl<Key: Hash + Eq, T> Debug for FrequencyList<Key, T> {
 
 #[derive(Default, Eq, Ord, PartialOrd, Debug)]
 struct Node<Key: Hash + Eq, T> {
-    next: Option<NonNull<Node<Key, T>>>,
-    prev: Option<NonNull<Node<Key, T>>>,
+    next: Option<NonNull<Self>>,
+    prev: Option<NonNull<Self>>,
     elements: Option<NonNull<Entry<Key, T>>>,
     frequency: usize,
 }
@@ -512,8 +512,8 @@ impl<Key: Hash + Eq, T> Drop for Node<Key, T> {
 struct Entry<Key: Hash + Eq, T> {
     /// We still need to keep a linked list implementation for O(1)
     /// in-the-middle removal.
-    next: Option<NonNull<Entry<Key, T>>>,
-    prev: Option<NonNull<Entry<Key, T>>>,
+    next: Option<NonNull<Self>>,
+    prev: Option<NonNull<Self>>,
     /// Instead of traversing up to the frequency node, we just keep a reference
     /// to the owning node. This ensures that entry movement is an O(1)
     /// operation.
@@ -659,16 +659,14 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     fn pop_lfu(&mut self) -> Option<NonNull<Entry<Key, T>>> {
         self.head
             .as_mut()
-            .map(|node| unsafe { node.as_mut() }.pop())
-            .flatten()
+            .and_then(|node| unsafe { node.as_mut() }.pop())
     }
 
     #[inline]
     fn peek_lfu(&self) -> Option<&T> {
         self.head
             .as_ref()
-            .map(|node| unsafe { node.as_ref() }.peek())
-            .flatten()
+            .and_then(|node| unsafe { node.as_ref() }.peek())
     }
 
     fn frequencies(&self) -> Vec<usize> {
