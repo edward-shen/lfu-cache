@@ -556,7 +556,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         let entry = Box::new(Entry::new(head, key, value));
         let entry = Box::leak(entry).into();
         // SAFETY: self is exclusively accessed
-        unsafe { head.as_mut() }.append(entry);
+        unsafe { head.as_mut() }.push(entry);
         entry
     }
 
@@ -642,7 +642,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
             let mut boxed = unsafe { Box::from_raw(freq_list_node) };
 
             // Insert item into next_owner
-            unsafe { boxed.next.unwrap().as_mut() }.append(entry.into());
+            unsafe { boxed.next.unwrap().as_mut() }.push(entry.into());
 
             // Because our drop implementation of Node recursively frees the
             // the next value, we need to unset the next value before dropping
@@ -651,26 +651,24 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
             self.len -= 1;
         } else {
             // Insert item into next_owner
-            unsafe { freq_list_node.next.unwrap().as_mut() }.append(entry.into());
+            unsafe { freq_list_node.next.unwrap().as_mut() }.push(entry.into());
         }
     }
 
+    #[inline]
     fn pop_lfu(&mut self) -> Option<NonNull<Entry<Key, T>>> {
-        if let Some(mut node) = self.head {
-            // SAFETY: self is exclusively accessed
-            return unsafe { node.as_mut() }.pop();
-        }
-
-        None
+        self.head
+            .as_mut()
+            .map(|node| unsafe { node.as_mut() }.pop())
+            .flatten()
     }
 
+    #[inline]
     fn peek_lfu(&self) -> Option<&T> {
-        if let Some(ref node) = self.head {
-            // SAFETY: self is exclusively accessed
-            return unsafe { node.as_ref() }.peek();
-        }
-
-        None
+        self.head
+            .as_ref()
+            .map(|node| unsafe { node.as_ref() }.peek())
+            .flatten()
     }
 
     fn frequencies(&self) -> Vec<usize> {
@@ -709,6 +707,26 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
         self.next = Some(node);
     }
 
+    /// Pushes the entry to the front of the list
+    fn push(&mut self, mut entry: NonNull<Entry<Key, T>>) {
+        // Fix next
+        if let Some(mut head) = self.elements {
+            // SAFETY: self is exclusively accessed
+            let head_ptr = unsafe { head.as_mut() };
+            head_ptr.prev = Some(entry);
+        }
+        // SAFETY: self is exclusively accessed
+        let entry_ptr = unsafe { entry.as_mut() };
+        entry_ptr.next = self.elements;
+
+        // Update internals
+        entry_ptr.owner = self.into();
+
+        // Fix previous
+        entry_ptr.prev = None;
+        self.elements = Some(entry);
+    }
+
     fn pop(&mut self) -> Option<NonNull<Entry<Key, T>>> {
         if let Some(mut node_ptr) = self.elements {
             // SAFETY: self is exclusively accessed
@@ -738,26 +756,6 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
         }
 
         None
-    }
-
-    /// Pushes the entry to the front of the list
-    fn append(&mut self, mut entry: NonNull<Entry<Key, T>>) {
-        // Fix next
-        if let Some(mut head) = self.elements {
-            // SAFETY: self is exclusively accessed
-            let head_ptr = unsafe { head.as_mut() };
-            head_ptr.prev = Some(entry);
-        }
-        // SAFETY: self is exclusively accessed
-        let entry_ptr = unsafe { entry.as_mut() };
-        entry_ptr.next = self.elements;
-
-        // Update internals
-        entry_ptr.owner = self.into();
-
-        // Fix previous
-        entry_ptr.prev = None;
-        self.elements = Some(entry);
     }
 
     fn len(&self) -> usize {
@@ -815,6 +813,23 @@ mod get {
         cache.insert(3, 4);
         assert_eq!(cache.get(&1), Some(&2));
     }
+
+    #[test]
+    fn bounded_alternating_values() {
+        let mut cache = LfuCache::with_capacity(8);
+        cache.insert(1, 1);
+        cache.insert(2, 2);
+        for _ in 0..100 {
+            cache.get(&1);
+            cache.get(&2);
+        }
+
+        assert_eq!(cache.len(), 2);
+        assert_eq!(cache.frequencies(), vec![100]);
+    }
+
+    // #[test]
+    // fn
 }
 
 #[cfg(test)]
@@ -923,6 +938,84 @@ mod remove {
         assert!(cache.is_empty());
         assert_eq!(cache.freq_list.len, 0);
     }
+
+    #[test]
+    fn remove_middle() {
+        let mut cache = LfuCache::unbounded();
+        cache.insert(1, 2);
+        cache.insert(3, 4);
+        cache.insert(5, 6);
+        cache.insert(7, 8);
+        cache.insert(9, 10);
+        cache.insert(11, 12);
+
+        cache.get(&7);
+        cache.get(&9);
+        cache.get(&11);
+
+        assert_eq!(cache.frequencies(), vec![0, 1]);
+        assert_eq!(cache.len(), 6);
+
+        cache.remove(&9);
+        assert!(cache.get(&7).is_some());
+        assert!(cache.get(&11).is_some());
+
+        cache.remove(&3);
+        assert!(cache.get(&1).is_some());
+        assert!(cache.get(&5).is_some());
+    }
+
+    #[test]
+    fn remove_end() {
+        let mut cache = LfuCache::unbounded();
+        cache.insert(1, 2);
+        cache.insert(3, 4);
+        cache.insert(5, 6);
+        cache.insert(7, 8);
+        cache.insert(9, 10);
+        cache.insert(11, 12);
+
+        cache.get(&7);
+        cache.get(&9);
+        cache.get(&11);
+
+        assert_eq!(cache.frequencies(), vec![0, 1]);
+        assert_eq!(cache.len(), 6);
+
+        cache.remove(&7);
+        assert!(cache.get(&9).is_some());
+        assert!(cache.get(&11).is_some());
+
+        cache.remove(&1);
+        assert!(cache.get(&3).is_some());
+        assert!(cache.get(&5).is_some());
+    }
+
+    #[test]
+    fn remove_start() {
+        let mut cache = LfuCache::unbounded();
+        cache.insert(1, 2);
+        cache.insert(3, 4);
+        cache.insert(5, 6);
+        cache.insert(7, 8);
+        cache.insert(9, 10);
+        cache.insert(11, 12);
+
+        cache.get(&7);
+        cache.get(&9);
+        cache.get(&11);
+
+        assert_eq!(cache.frequencies(), vec![0, 1]);
+        assert_eq!(cache.len(), 6);
+
+        cache.remove(&11);
+        assert!(cache.get(&9).is_some());
+        assert!(cache.get(&7).is_some());
+
+        cache.remove(&5);
+        assert!(cache.get(&3).is_some());
+        assert!(cache.get(&1).is_some());
+    }
 }
 
 #[cfg(test)]
@@ -1000,5 +1093,225 @@ mod bookkeeping {
         for i in 0..10 {
             assert!(cache.get(&i).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod frequency_list {}
+
+#[cfg(test)]
+mod node {
+    use super::{Entry, Node};
+    use std::ptr::NonNull;
+    use std::rc::Rc;
+
+    fn init_node() -> Node<isize, isize> {
+        Node::default()
+    }
+
+    #[test]
+    fn create_increment_next_empty() {
+        unsafe {
+            let head = init_node();
+            let head = Box::new(head);
+            let mut head = NonNull::from(Box::leak(head));
+            head.as_mut().create_increment();
+
+            let next = head.as_ref().next;
+            assert!(next.is_some());
+            let next = next.unwrap();
+
+            // assert links between are good.
+            assert_eq!(next.as_ref().prev, Some(head));
+            assert_eq!(head.as_ref().next, Some(next));
+
+            // assert links away are good
+            assert!(head.as_ref().next.unwrap().as_ref().next.is_none());
+            assert!(head.as_ref().prev.is_none());
+
+            // Assert frequency is incremented
+            assert_eq!(
+                head.as_ref().frequency + 1,
+                head.as_ref().next.unwrap().as_ref().frequency
+            );
+
+            // unleak box
+            Box::from_raw(head.as_mut());
+        }
+    }
+
+    #[test]
+    fn create_increment_next_non_empty() {
+        unsafe {
+            let head = init_node();
+            let head = Box::new(head);
+            let mut head = NonNull::from(Box::leak(head));
+            head.as_mut().create_increment();
+            head.as_mut().create_increment();
+
+            let next = head.as_ref().next.unwrap();
+            let next_next = next.as_ref().next.unwrap();
+
+            // assert head links
+            assert!(head.as_ref().prev.is_none());
+            assert_eq!(head.as_ref().next, Some(next));
+
+            // assert first ele links
+            assert_eq!(next.as_ref().prev, Some(head));
+            assert_eq!(next.as_ref().next, Some(next_next));
+
+            // assert second ele links
+            assert_eq!(next_next.as_ref().prev, Some(next));
+            assert_eq!(next_next.as_ref().next, None);
+
+            // Assert frequency is incremented
+            assert_eq!(
+                head.as_ref().frequency + 1,
+                head.as_ref().next.unwrap().as_ref().frequency
+            );
+
+            // unleak box
+            Box::from_raw(head.as_mut());
+        }
+    }
+
+    #[test]
+    fn append_empty() {
+        let mut node = init_node();
+        let mut entry = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry).into());
+
+        assert_eq!(entry.owner, (&mut node).into());
+        assert_eq!(node.elements, Some((&mut entry).into()));
+
+        assert_eq!(entry.prev, None);
+        assert_eq!(entry.next, None);
+    }
+
+    #[test]
+    fn append_non_empty() {
+        let mut node = init_node();
+
+        // insert first node
+        let mut entry_0 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry_0).into());
+        assert_eq!(entry_0.owner, (&mut node).into());
+        assert_eq!(node.elements, Some((&mut entry_0).into()));
+
+        // insert second node
+        let mut entry_1 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry_1).into());
+        assert_eq!(entry_1.owner, (&mut node).into());
+        assert_eq!(node.elements, Some((&mut entry_1).into()));
+
+        // insert last node
+        let mut entry_2 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry_2).into());
+        assert_eq!(entry_2.owner, (&mut node).into());
+        assert_eq!(node.elements, Some((&mut entry_2).into()));
+
+        // validate internal elements
+        assert_eq!(entry_2.prev, None);
+        assert_eq!(entry_2.next, Some((&mut entry_1).into()));
+
+        assert_eq!(entry_1.prev, Some((&mut entry_2).into()));
+        assert_eq!(entry_1.next, Some((&mut entry_0).into()));
+
+        assert_eq!(entry_0.prev, Some((&mut entry_1).into()));
+        assert_eq!(entry_0.next, None);
+
+        // validate head
+        assert_eq!(node.elements, Some((&mut entry_2).into()));
+    }
+
+    #[test]
+    fn pop_empty() {
+        assert!(init_node().pop().is_none());
+    }
+
+    #[test]
+    fn pop_single() {
+        let mut node = init_node();
+
+        let mut entry = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry).into());
+
+        let popped = node.pop();
+        assert_eq!(popped, Some((&mut entry).into()));
+
+        assert!(node.elements.is_none());
+
+        // Assert popped is decoupled
+        assert!(entry.prev.is_none());
+        assert!(entry.next.is_none());
+    }
+
+    #[test]
+    fn pop_non_empty() {
+        let mut node = init_node();
+
+        // insert first node
+        let mut entry_0 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry_0).into());
+
+        // insert second node
+        let mut entry_1 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry_1).into());
+
+        // insert last node
+        let mut entry_2 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry_2).into());
+
+        // pop top
+        let popped = node.pop();
+        assert_eq!(popped, Some((&mut entry_2).into()));
+
+        // Assert popped is decoupled
+        assert!(entry_2.prev.is_none());
+        assert!(entry_2.next.is_none());
+
+        // validate head
+        assert_eq!(node.elements, Some((&mut entry_1).into()));
+
+        // validate internal elements
+
+        assert_eq!(entry_1.prev, None);
+        assert_eq!(entry_1.next, Some((&mut entry_0).into()));
+
+        assert_eq!(entry_0.prev, Some((&mut entry_1).into()));
+        assert_eq!(entry_0.next, None);
+    }
+
+    #[test]
+    fn peek_empty() {
+        assert!(init_node().peek().is_none());
+    }
+
+    #[test]
+    fn peek_non_empty() {
+        let mut node = init_node();
+        let mut entry = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry).into());
+        assert_eq!(node.peek(), Some(&2));
+    }
+}
+
+#[cfg(test)]
+mod entry {
+    use super::Entry;
+    use std::ptr::NonNull;
+    use std::rc::Rc;
+
+    #[test]
+    fn new_constructs_dangling_entry_with_owner() {
+        let owner = NonNull::dangling();
+        let key = Rc::new(1);
+        let entry = Entry::new(owner, Rc::clone(&key), 2);
+
+        assert!(entry.next.is_none());
+        assert!(entry.prev.is_none());
+        assert_eq!(entry.owner, owner);
+        assert_eq!(entry.key, key);
+        assert_eq!(entry.value, 2);
     }
 }

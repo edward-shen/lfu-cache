@@ -374,7 +374,6 @@ mod timed {
     }
 
     #[test]
-    #[ignore]
     fn non_expired_remains() {
         let duration = Duration::from_millis(250);
         let mut cache = TimedLfuCache::with_expiration(duration);
