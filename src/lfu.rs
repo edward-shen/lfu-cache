@@ -1117,20 +1117,28 @@ mod frequency_list {
     #[test]
     fn insert_non_empty() {
         let mut list = init_list();
-        let mut entry_0 = unsafe { Box::from_raw(list.insert(Rc::new(1), 2).as_ptr()) };
-        let mut entry_1 = unsafe { Box::from_raw(list.insert(Rc::new(3), 4).as_ptr()) };
+        let entry_0 = NonNull::new(list.insert(Rc::new(1), 2).as_ptr()).unwrap();
+        let entry_1 = NonNull::new(list.insert(Rc::new(3), 4).as_ptr()).unwrap();
+
+        let entry_0_ref = unsafe { entry_0.as_ref() };
+        let entry_1_ref = unsafe { entry_1.as_ref() };
 
         // validate entry_1
-        assert_eq!(entry_1.prev, None);
-        assert_eq!(entry_1.next, Some(NonNull::from(&mut *entry_0)));
-        assert_eq!(entry_1.value, 4);
-        assert_eq!(entry_1.owner, list.head.unwrap());
+        assert_eq!(entry_1_ref.prev, None);
+        assert_eq!(entry_1_ref.next, Some(entry_0));
+        assert_eq!(entry_1_ref.value, 4);
+        assert_eq!(entry_1_ref.owner, list.head.unwrap());
 
         // validate entry_0
-        assert_eq!(entry_0.prev, Some(NonNull::from(&mut *entry_1)));
-        assert_eq!(entry_0.next, None);
-        assert_eq!(entry_0.value, 2);
-        assert_eq!(entry_0.owner, list.head.unwrap());
+        assert_eq!(entry_0_ref.prev, Some(entry_1));
+        assert_eq!(entry_0_ref.next, None);
+        assert_eq!(entry_0_ref.value, 2);
+        assert_eq!(entry_0_ref.owner, list.head.unwrap());
+
+        unsafe {
+            Box::from_raw(entry_0.as_ptr());
+            Box::from_raw(entry_1.as_ptr());
+        }
     }
 
     #[test]
