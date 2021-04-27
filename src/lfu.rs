@@ -26,6 +26,7 @@ pub struct LfuCache<Key: Hash + Eq, Value> {
 #[derive(Eq, PartialEq)]
 struct LookupMap<Key: Hash + Eq, Value>(HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>);
 
+#[cfg(not(tarpaulin_include))]
 impl<Key: Hash + Eq + Debug, Value> Debug for LookupMap<Key, Value> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut dbg = f.debug_struct("LookupMap");
@@ -370,6 +371,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     }
 }
 
+#[cfg(not(tarpaulin_include))]
 impl<Key: Hash + Eq + Debug, Value> Debug for LfuCache<Key, Value> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut dbg = f.debug_struct("LfuCache");
@@ -430,6 +432,27 @@ struct FrequencyList<Key: Hash + Eq, T> {
     len: usize,
 }
 
+#[cfg(not(tarpaulin_include))]
+impl<Key: Hash + Eq, T> Debug for FrequencyList<Key, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut dbg = f.debug_struct("FrequencyList");
+        dbg.field("len", &self.len);
+
+        let mut node = self.head;
+        while let Some(cur_node) = node {
+            let cur_node = unsafe { cur_node.as_ref() };
+            dbg.field(
+                &format!("node freq {} num elements", &cur_node.frequency),
+                &cur_node.len(),
+            );
+            node = cur_node.next;
+        }
+
+        dbg.finish()
+    }
+}
+
+#[cfg(not(tarpaulin_include))]
 impl<Key: Hash + Eq, T: Display> Display for FrequencyList<Key, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Total elements: {}", self.len)?;
@@ -460,25 +483,6 @@ impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
     }
 }
 
-impl<Key: Hash + Eq, T> Debug for FrequencyList<Key, T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut dbg = f.debug_struct("FrequencyList");
-        dbg.field("len", &self.len);
-
-        let mut node = self.head;
-        while let Some(cur_node) = node {
-            let cur_node = unsafe { cur_node.as_ref() };
-            dbg.field(
-                &format!("node freq {} num elements", &cur_node.frequency),
-                &cur_node.len(),
-            );
-            node = cur_node.next;
-        }
-
-        dbg.finish()
-    }
-}
-
 #[derive(Default, Eq, Ord, PartialOrd, Debug)]
 struct Node<Key: Hash + Eq, T> {
     next: Option<NonNull<Self>>,
@@ -493,6 +497,7 @@ impl<Key: Hash + Eq, T> PartialEq for Node<Key, T> {
     }
 }
 
+#[cfg(not(tarpaulin_include))]
 impl<Key: Hash + Eq, T> Hash for Node<Key, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.frequency);
@@ -526,6 +531,7 @@ struct Entry<Key: Hash + Eq, T> {
     value: T,
 }
 
+#[cfg(not(tarpaulin_include))]
 impl<Key: Hash + Eq, T: Display> Display for Entry<Key, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
@@ -823,9 +829,6 @@ mod get {
         assert_eq!(cache.len(), 2);
         assert_eq!(cache.frequencies(), vec![100]);
     }
-
-    // #[test]
-    // fn
 }
 
 #[cfg(test)]

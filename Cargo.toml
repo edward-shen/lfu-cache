@@ -14,10 +14,10 @@ include = ["src/*", "LICENSE-*", "README.md"]
 lto = true
 codegen-units = 1
 
-[dev-dependencies]
-criterion = "0.3"
+# [dev-dependencies]
+# criterion = "0.3"
 
-[[bench]]
-name = "scaling"
-path = "benches/scaling.rs"
-harness = false
+# [[bench]]
+# name = "scaling"
+# path = "benches/scaling.rs"
+# harness = false

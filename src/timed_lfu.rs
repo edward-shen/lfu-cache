@@ -15,6 +15,7 @@ use crate::lfu::LfuCache;
 /// expired entries is O(log n).
 // This is re-exported at the crate root, so this lint can be safely ignored.
 #[allow(clippy::module_name_repetitions)]
+#[derive(Eq)]
 pub struct TimedLfuCache<Key: Hash + Eq, Value> {
     cache: LfuCache<Key, Value>,
     expiration: Option<Duration>,
@@ -30,8 +31,6 @@ impl<Key: Hash + Eq, Value: PartialEq> PartialEq for TimedLfuCache<Key, Value> {
         self.cache.eq(&other.cache) && self.expiration == other.expiration
     }
 }
-
-impl<Key: Hash + Eq, Value: Eq> Eq for TimedLfuCache<Key, Value> {}
 
 unsafe impl<Key: Hash + Eq, Value> Send for TimedLfuCache<Key, Value> {}
 unsafe impl<Key: Hash + Eq, Value> Sync for TimedLfuCache<Key, Value> {}

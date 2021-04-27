@@ -31,3 +31,37 @@ impl<Key: Hash + Eq, Value> ExactSizeIterator for LfuCacheIter<Key, Value> {
         self.0.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::LfuCache;
+
+    #[test]
+    fn order_in_lfu() {
+        let mut cache = LfuCache::unbounded();
+        for i in 0..10 {
+            cache.insert(i, i);
+            cache.get(&i);
+        }
+
+        let mut cache = cache.into_iter();
+
+        for i in (0..10).rev() {
+            assert_eq!(cache.next(), Some((i, i)));
+        }
+
+        assert!(cache.next().is_none());
+    }
+
+    #[test]
+    fn size_is_correct() {
+        let mut cache = LfuCache::unbounded();
+        for i in 0..10 {
+            cache.insert(i, i);
+        }
+
+        let cache = cache.into_iter();
+        assert_eq!(cache.size_hint(), (10, Some(10)));
+        assert_eq!(cache.len(), 10);
+    }
+}
