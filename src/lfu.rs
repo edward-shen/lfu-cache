@@ -568,15 +568,14 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
             frequency: 0,
         });
 
-        let node = Box::leak(node).into();
+        let node = NonNull::from(Box::leak(node));
 
         if let Some(mut head) = self.head {
             // SAFETY: self is exclusively accessed
-            let next = unsafe { head.as_ref() }.next;
-            if let Some(mut next) = next {
+            if let Some(mut next) = unsafe { head.as_ref() }.next {
                 // SAFETY: self is exclusively accessed
                 let next = unsafe { next.as_mut() };
-                next.prev = Some(node);
+                next.prev = Some(head);
             }
 
             let head = unsafe { head.as_mut() };
@@ -622,8 +621,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         }
 
         // TODO: move the insert item into next_owner lines up here.
-        // This would be here but for some reason it works on nightly (1.53) but
-        // not on stable (1.51)
+        // This is blocked on 1.53: https://link.eddie.sh/40IiP
 
         // Drop frequency list node if it contains no elements
         if freq_list_node.elements.is_none() {
@@ -1095,7 +1093,86 @@ mod bookkeeping {
 }
 
 #[cfg(test)]
-mod frequency_list {}
+mod frequency_list {
+    use super::FrequencyList;
+
+    fn init_list() -> FrequencyList<i32, i32> {
+        FrequencyList::new()
+    }
+
+    #[test]
+    fn new_is_empty() {
+        let list = init_list();
+        assert!(list.head.is_none());
+        assert_eq!(list.len, 0);
+        assert!(list.frequencies().is_empty());
+    }
+
+    #[test]
+    fn init_front_empty() {
+        let mut list = init_list();
+        let front_node = list.init_front();
+        assert_eq!(list.head, Some(front_node));
+        assert_eq!(list.len, 1);
+
+        let front_node = unsafe { front_node.as_ref() };
+        assert_eq!(front_node.prev, None);
+        assert_eq!(front_node.next, None);
+    }
+
+    #[test]
+    fn init_front_non_empty() {
+        let mut list = init_list();
+
+        let back_node = list.init_front();
+        assert_eq!(list.head, Some(back_node));
+        assert_eq!(list.len, 1);
+        {
+            let back_node = unsafe { back_node.as_ref() };
+            assert_eq!(back_node.prev, None);
+            assert_eq!(back_node.next, None);
+        }
+
+        let middle_node = list.init_front();
+        assert_eq!(list.head, Some(middle_node));
+        assert_eq!(list.len, 2);
+        {
+            // validate middle node connections
+            let middle_node = unsafe { middle_node.as_ref() };
+            assert_eq!(middle_node.prev, None);
+            assert_eq!(middle_node.next, Some(back_node));
+        }
+        {
+            // validate back node connections
+            let back_node = unsafe { back_node.as_ref() };
+            assert_eq!(back_node.prev, Some(middle_node));
+            assert_eq!(back_node.next, None);
+        }
+
+        let front_node = list.init_front();
+        assert_eq!(list.head, Some(front_node));
+        assert_eq!(list.len, 3);
+        {
+            // validate front node connections
+            let front_node = unsafe { front_node.as_ref() };
+            assert_eq!(front_node.prev, None);
+            assert_eq!(front_node.next, Some(middle_node));
+        }
+
+        {
+            // validate middle node connections
+            let middle_node = unsafe { middle_node.as_ref() };
+            assert_eq!(middle_node.prev, Some(front_node));
+            assert_eq!(middle_node.next, Some(back_node));
+        }
+        {
+            // validate back node connections
+            let back_node = unsafe { back_node.as_ref() };
+            assert_eq!(back_node.prev, Some(middle_node));
+            assert_eq!(back_node.next, None);
+        }
+    }
+}
 
 #[cfg(test)]
 mod node {
