@@ -10,12 +10,12 @@ use std::rc::Rc;
 
 use crate::LfuCacheIter;
 
-pub(self) use entry::LfuEntry;
 pub(self) use freq_list::FrequencyList;
+pub(self) use lfu_entry::LfuEntry;
 pub(self) use node::Node;
 
-mod entry;
 mod freq_list;
+mod lfu_entry;
 mod node;
 
 /// A collection that, if limited to a certain capacity, will evict based on the
