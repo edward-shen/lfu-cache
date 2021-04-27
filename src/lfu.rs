@@ -544,23 +544,17 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         Self { head: None, len: 0 }
     }
 
+    /// Inserts an item into the frequency list, returning a pointer to the
+    /// item. Callers must make sure to free the returning pointer, usually via
+    /// `Box::from_raw(foo.as_ptr())`.
     fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<Entry<Key, T>> {
-        // False positive: the alternative would need mutable borrowing of self
-        // in both closures, which isn't allowed
-        #[allow(clippy::option_if_let_else)]
-        let mut head = if let Some(mut head) = self.head {
-            // SAFETY: self is exclusively accessed
-            if unsafe { head.as_mut() }.frequency == 0 {
-                head
-            } else {
-                self.init_front()
-            }
-        } else {
-            self.init_front()
+        let mut head = match self.head {
+            Some(head) if unsafe { head.as_ref() }.frequency == 0 => head,
+            _ => self.init_front(),
         };
 
         let entry = Box::new(Entry::new(head, key, value));
-        let entry = Box::leak(entry).into();
+        let entry = NonNull::from(Box::leak(entry));
         // SAFETY: self is exclusively accessed
         unsafe { head.as_mut() }.push(entry);
         entry
@@ -614,13 +608,10 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         let freq_list_node = unsafe { entry.owner.as_mut() };
 
         let freq_list_node_freq = freq_list_node.frequency;
-        if freq_list_node.next.is_none() {
-            freq_list_node.create_increment();
-            self.len += 1;
-        } else if let Some(node) = freq_list_node.next {
+        match freq_list_node.next {
             // SAFETY: self is exclusively accessed
-            let node_ptr = unsafe { node.as_ref() };
-            if node_ptr.frequency != freq_list_node_freq + 1 {
+            Some(node) if unsafe { node.as_ref() }.frequency == freq_list_node_freq + 1 => (),
+            _ => {
                 freq_list_node.create_increment();
                 self.len += 1;
             }
@@ -1097,6 +1088,8 @@ mod bookkeeping {
 
 #[cfg(test)]
 mod frequency_list {
+    use std::{ptr::NonNull, rc::Rc};
+
     use super::FrequencyList;
 
     fn init_list() -> FrequencyList<i32, i32> {
@@ -1109,6 +1102,55 @@ mod frequency_list {
         assert!(list.head.is_none());
         assert_eq!(list.len, 0);
         assert!(list.frequencies().is_empty());
+    }
+
+    #[test]
+    fn insert() {
+        let mut list = init_list();
+        let entry = unsafe { Box::from_raw(list.insert(Rc::new(1), 2).as_ptr()) };
+        assert_eq!(entry.prev, None);
+        assert_eq!(entry.next, None);
+        assert_eq!(entry.value, 2);
+        assert_eq!(entry.owner, list.head.unwrap());
+    }
+
+    #[test]
+    fn insert_non_empty() {
+        let mut list = init_list();
+        let mut entry_0 = unsafe { Box::from_raw(list.insert(Rc::new(1), 2).as_ptr()) };
+        let mut entry_1 = unsafe { Box::from_raw(list.insert(Rc::new(3), 4).as_ptr()) };
+
+        // validate entry_1
+        assert_eq!(entry_1.prev, None);
+        assert_eq!(entry_1.next, Some(NonNull::from(&mut *entry_0)));
+        assert_eq!(entry_1.value, 4);
+        assert_eq!(entry_1.owner, list.head.unwrap());
+
+        // validate entry_0
+        assert_eq!(entry_0.prev, Some(NonNull::from(&mut *entry_1)));
+        assert_eq!(entry_0.next, None);
+        assert_eq!(entry_0.value, 2);
+        assert_eq!(entry_0.owner, list.head.unwrap());
+    }
+
+    #[test]
+    fn insert_non_empty_non_freq_zero() {
+        let mut list = init_list();
+        let mut entry_0 = unsafe { Box::from_raw(list.insert(Rc::new(1), 2).as_ptr()) };
+        list.update(NonNull::from(&mut *entry_0));
+        let entry_1 = unsafe { Box::from_raw(list.insert(Rc::new(3), 4).as_ptr()) };
+
+        // validate entry_0
+        assert_eq!(entry_0.prev, None);
+        assert_eq!(entry_0.next, None);
+        assert_eq!(entry_0.value, 2);
+        assert_ne!(entry_0.owner, list.head.unwrap());
+
+        // validate entry_1
+        assert_eq!(entry_1.prev, None);
+        assert_eq!(entry_1.next, None);
+        assert_eq!(entry_1.value, 4);
+        assert_eq!(entry_1.owner, list.head.unwrap());
     }
 
     #[test]
@@ -1174,6 +1216,57 @@ mod frequency_list {
             assert_eq!(back_node.prev, Some(middle_node));
             assert_eq!(back_node.next, None);
         }
+    }
+
+    #[test]
+    fn update_removes_empty_node() {
+        let mut list = init_list();
+        let entry = list.insert(Rc::new(1), 2);
+
+        list.update(entry);
+        assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 1);
+        list.update(entry);
+        assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 2);
+
+        // unleak entry
+        unsafe { Box::from_raw(entry.as_ptr()) };
+    }
+
+    #[test]
+    fn update_does_not_remove_non_empty_node() {
+        let mut list = init_list();
+        let entry_0 = list.insert(Rc::new(1), 2);
+        let entry_1 = list.insert(Rc::new(3), 4);
+
+        list.update(entry_0);
+        assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 0);
+        assert_eq!(list.frequencies(), vec![0, 1]);
+        list.update(entry_1);
+        list.update(entry_0);
+        assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 1);
+        assert_eq!(list.frequencies(), vec![1, 2]);
+
+        // unleak entry
+        unsafe { Box::from_raw(entry_0.as_ptr()) };
+        unsafe { Box::from_raw(entry_1.as_ptr()) };
+    }
+
+    #[test]
+    fn update_correctly_removes_in_middle_nodes() {
+        let mut list = init_list();
+        let entry_0 = list.insert(Rc::new(1), 2);
+        let entry_1 = list.insert(Rc::new(3), 4);
+
+        list.update(entry_0);
+        assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 0);
+        assert_eq!(list.frequencies(), vec![0, 1]);
+        list.update(entry_0);
+        assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 0);
+        assert_eq!(list.frequencies(), vec![0, 2]);
+
+        // unleak entry
+        unsafe { Box::from_raw(entry_0.as_ptr()) };
+        unsafe { Box::from_raw(entry_1.as_ptr()) };
     }
 }
 
