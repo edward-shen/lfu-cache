@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use crate::LfuCacheIter;
 
-pub(self) use entry::Entry;
+pub(self) use entry::LfuEntry;
 pub(self) use freq_list::FrequencyList;
 pub(self) use node::Node;
 
@@ -33,7 +33,7 @@ pub struct LfuCache<Key: Hash + Eq, Value> {
 }
 
 #[derive(Eq, PartialEq)]
-struct LookupMap<Key: Hash + Eq, Value>(HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>);
+struct LookupMap<Key: Hash + Eq, Value>(HashMap<Rc<Key>, NonNull<LfuEntry<Key, Value>>>);
 
 #[cfg(not(tarpaulin_include))]
 impl<Key: Hash + Eq + Debug, Value> Debug for LookupMap<Key, Value> {
@@ -264,7 +264,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     }
 
     /// Removes the entry from the cache, cleaning up any values if necessary.
-    fn remove_entry_pointer(&mut self, mut node: Entry<Key, Value>) -> Value {
+    fn remove_entry_pointer(&mut self, mut node: LfuEntry<Key, Value>) -> Value {
         // SAFETY: We have unique access to self, so we know that nothing else
         // is currently accessing the data structure.
 

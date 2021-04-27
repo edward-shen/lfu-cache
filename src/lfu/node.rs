@@ -1,13 +1,13 @@
 use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
 
-use super::Entry;
+use super::LfuEntry;
 
 #[derive(Default, Eq, Ord, PartialOrd, Debug)]
 pub(super) struct Node<Key: Hash + Eq, T> {
     pub(super) next: Option<NonNull<Self>>,
     pub(super) prev: Option<NonNull<Self>>,
-    pub(super) elements: Option<NonNull<Entry<Key, T>>>,
+    pub(super) elements: Option<NonNull<LfuEntry<Key, T>>>,
     pub(super) frequency: usize,
 }
 
@@ -57,7 +57,7 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
     }
 
     /// Pushes the entry to the front of the list
-    pub(super) fn push(&mut self, mut entry: NonNull<Entry<Key, T>>) {
+    pub(super) fn push(&mut self, mut entry: NonNull<LfuEntry<Key, T>>) {
         // Fix next
         if let Some(mut head) = self.elements {
             // SAFETY: self is exclusively accessed
@@ -76,7 +76,7 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
         self.elements = Some(entry);
     }
 
-    pub(super) fn pop(&mut self) -> Option<NonNull<Entry<Key, T>>> {
+    pub(super) fn pop(&mut self) -> Option<NonNull<LfuEntry<Key, T>>> {
         if let Some(mut node_ptr) = self.elements {
             // SAFETY: self is exclusively accessed
             let node = unsafe { node_ptr.as_mut() };
@@ -121,7 +121,7 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
 
 #[cfg(test)]
 mod node {
-    use super::{Entry, Node};
+    use super::{LfuEntry, Node};
     use std::ptr::NonNull;
     use std::rc::Rc;
 
@@ -198,7 +198,7 @@ mod node {
     #[test]
     fn append_empty() {
         let mut node = init_node();
-        let mut entry = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
         node.push((&mut entry).into());
 
         assert_eq!(entry.owner, (&mut node).into());
@@ -213,19 +213,19 @@ mod node {
         let mut node = init_node();
 
         // insert first node
-        let mut entry_0 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry_0 = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
         node.push((&mut entry_0).into());
         assert_eq!(entry_0.owner, (&mut node).into());
         assert_eq!(node.elements, Some((&mut entry_0).into()));
 
         // insert second node
-        let mut entry_1 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry_1 = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
         node.push((&mut entry_1).into());
         assert_eq!(entry_1.owner, (&mut node).into());
         assert_eq!(node.elements, Some((&mut entry_1).into()));
 
         // insert last node
-        let mut entry_2 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry_2 = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
         node.push((&mut entry_2).into());
         assert_eq!(entry_2.owner, (&mut node).into());
         assert_eq!(node.elements, Some((&mut entry_2).into()));
@@ -253,7 +253,7 @@ mod node {
     fn pop_single() {
         let mut node = init_node();
 
-        let mut entry = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
         node.push((&mut entry).into());
 
         let popped = node.pop();
@@ -271,15 +271,15 @@ mod node {
         let mut node = init_node();
 
         // insert first node
-        let mut entry_0 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry_0 = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
         node.push((&mut entry_0).into());
 
         // insert second node
-        let mut entry_1 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry_1 = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
         node.push((&mut entry_1).into());
 
         // insert last node
-        let mut entry_2 = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry_2 = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
         node.push((&mut entry_2).into());
 
         // pop top
@@ -310,7 +310,7 @@ mod node {
     #[test]
     fn peek_non_empty() {
         let mut node = init_node();
-        let mut entry = Entry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
         node.push((&mut entry).into());
         assert_eq!(node.peek(), Some(&2));
     }

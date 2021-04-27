@@ -6,7 +6,7 @@ use std::rc::Rc;
 use super::Node;
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub(super) struct Entry<Key: Hash + Eq, T> {
+pub(super) struct LfuEntry<Key: Hash + Eq, T> {
     /// We still need to keep a linked list implementation for O(1)
     /// in-the-middle removal.
     pub(super) next: Option<NonNull<Self>>,
@@ -24,13 +24,13 @@ pub(super) struct Entry<Key: Hash + Eq, T> {
 }
 
 #[cfg(not(tarpaulin_include))]
-impl<Key: Hash + Eq, T: Display> Display for Entry<Key, T> {
+impl<Key: Hash + Eq, T: Display> Display for LfuEntry<Key, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
 
-impl<Key: Hash + Eq, T> Entry<Key, T> {
+impl<Key: Hash + Eq, T> LfuEntry<Key, T> {
     #[must_use]
     pub(super) fn new(owner: NonNull<Node<Key, T>>, key: Rc<Key>, value: T) -> Self {
         Self {
@@ -45,7 +45,7 @@ impl<Key: Hash + Eq, T> Entry<Key, T> {
 
 #[cfg(test)]
 mod entry {
-    use super::Entry;
+    use super::LfuEntry;
     use std::ptr::NonNull;
     use std::rc::Rc;
 
@@ -53,7 +53,7 @@ mod entry {
     fn new_constructs_dangling_entry_with_owner() {
         let owner = NonNull::dangling();
         let key = Rc::new(1);
-        let entry = Entry::new(owner, Rc::clone(&key), 2);
+        let entry = LfuEntry::new(owner, Rc::clone(&key), 2);
 
         assert!(entry.next.is_none());
         assert!(entry.prev.is_none());

@@ -3,7 +3,7 @@ use std::hash::Hash;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use super::{Entry, Node};
+use super::{LfuEntry, Node};
 
 #[derive(Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(super) struct FrequencyList<Key: Hash + Eq, T> {
@@ -71,13 +71,13 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     /// Inserts an item into the frequency list, returning a pointer to the
     /// item. Callers must make sure to free the returning pointer, usually via
     /// `Box::from_raw(foo.as_ptr())`.
-    pub(super) fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<Entry<Key, T>> {
+    pub(super) fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<LfuEntry<Key, T>> {
         let mut head = match self.head {
             Some(head) if unsafe { head.as_ref() }.frequency == 0 => head,
             _ => self.init_front(),
         };
 
-        let entry = Box::new(Entry::new(head, key, value));
+        let entry = Box::new(LfuEntry::new(head, key, value));
         let entry = NonNull::from(Box::leak(entry));
         // SAFETY: self is exclusively accessed
         unsafe { head.as_mut() }.push(entry);
@@ -112,7 +112,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         node
     }
 
-    pub(super) fn update(&mut self, mut entry: NonNull<Entry<Key, T>>) {
+    pub(super) fn update(&mut self, mut entry: NonNull<LfuEntry<Key, T>>) {
         let entry = unsafe { entry.as_mut() };
         // Remove the entry from the node.
         // SAFETY: self is exclusively accessed
@@ -175,7 +175,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     }
 
     #[inline]
-    pub(super) fn pop_lfu(&mut self) -> Option<NonNull<Entry<Key, T>>> {
+    pub(super) fn pop_lfu(&mut self) -> Option<NonNull<LfuEntry<Key, T>>> {
         self.head
             .as_mut()
             .and_then(|node| unsafe { node.as_mut() }.pop())
