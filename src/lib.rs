@@ -20,5 +20,6 @@ mod lfu;
 mod timed_lfu;
 
 pub use iter::LfuCacheIter;
+pub use lfu::entry::{Entry, OccupiedEntry, VacantEntry};
 pub use lfu::LfuCache;
 pub use timed_lfu::TimedLfuCache;

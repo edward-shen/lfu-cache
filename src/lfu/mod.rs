@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
@@ -7,16 +6,22 @@ use std::iter::{FromIterator, FusedIterator};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
+use std::{borrow::Borrow, collections::hash_map};
 
-use crate::LfuCacheIter;
+use crate::{Entry, LfuCacheIter};
 
 pub(self) use freq_list::FrequencyList;
 pub(self) use lfu_entry::LfuEntry;
 pub(self) use node::Node;
 
+use self::entry::{OccupiedEntry, VacantEntry};
+use self::util::remove_entry_pointer;
+
+pub mod entry;
 mod freq_list;
 mod lfu_entry;
 mod node;
+mod util;
 
 /// A collection that, if limited to a certain capacity, will evict based on the
 /// least recently used value.
@@ -194,16 +199,45 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     }
 
     /// Removes a value from the cache by key, if it exists.
+    #[inline]
     pub fn remove(&mut self, key: &Key) -> Option<Value> {
-        if let Some(mut node) = self.lookup.0.remove(key) {
+        self.lookup.0.remove(key).map(|mut node| {
             // SAFETY: We have unique access to self. At this point, we've
             // removed the entry from the lookup map but haven't removed it from
             // the frequency data structure, so we need to clean it up there
             // before returning the value.
-            return Some(self.remove_entry_pointer(*unsafe { Box::from_raw(node.as_mut()) }));
-        }
+            remove_entry_pointer(
+                *unsafe { Box::from_raw(node.as_mut()) },
+                &mut self.freq_list,
+                &mut self.len,
+            )
+        })
+    }
 
-        None
+    /// Gets the given key's corresponding entry in the map for in-place
+    /// manipulation. If the key refers to an occupied entry, that entry then is
+    /// immediately considered accessed, even if no reading or writing is
+    /// performed. This behavior is a limitation of the Entry API.
+    #[inline]
+    pub fn entry(&mut self, key: Key) -> Entry<'_, Key, Value> {
+        let key = Rc::new(key);
+        match self.lookup.0.entry(Rc::clone(&key)) {
+            hash_map::Entry::Occupied(entry) => {
+                self.freq_list.update(*entry.get());
+                Entry::Occupied(OccupiedEntry::new(
+                    entry,
+                    &mut self.freq_list,
+                    &mut self.len,
+                ))
+            }
+            hash_map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry::new(
+                entry,
+                key,
+                &mut self.freq_list,
+                self.capacity,
+                &mut self.len,
+            )),
+        }
     }
 
     /// Evicts the least frequently used value and returns it. If the cache is
@@ -227,8 +261,9 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// inserted under, and the frequency it had. If the cache is empty, then
     /// this returns None. If there are multiple items that have an equal access
     /// count, then the most recently added key-value pair is evicted.
+    #[inline]
     pub fn pop_lfu_key_value_frequency(&mut self) -> Option<(Key, Value, usize)> {
-        if let Some(mut entry_ptr) = self.freq_list.pop_lfu() {
+        self.freq_list.pop_lfu().map(|mut entry_ptr| {
             // SAFETY: This is fine since self is uniquely borrowed.
             let key = unsafe { entry_ptr.as_ref().key.as_ref() };
             self.lookup.0.remove(key);
@@ -242,10 +277,8 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
                 Ok(k) => k,
                 Err(_) => unsafe { unreachable_unchecked() },
             };
-
-            return Some((key, entry.value, unsafe { entry.owner.as_ref().frequency }));
-        }
-        None
+            (key, entry.value, unsafe { entry.owner.as_ref().frequency })
+        })
     }
 
     /// Clears the cache, returning the iterator of the previous cached values.
@@ -261,51 +294,6 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     #[must_use]
     pub fn peek_lfu(&self) -> Option<&Value> {
         self.freq_list.peek_lfu()
-    }
-
-    /// Removes the entry from the cache, cleaning up any values if necessary.
-    fn remove_entry_pointer(&mut self, mut node: LfuEntry<Key, Value>) -> Value {
-        // SAFETY: We have unique access to self, so we know that nothing else
-        // is currently accessing the data structure.
-
-        if let Some(mut next) = node.next {
-            let next = unsafe { next.as_mut() };
-            next.prev = node.prev;
-        }
-
-        if let Some(mut prev) = node.prev {
-            let prev = unsafe { prev.as_mut() };
-            prev.next = node.next;
-        } else {
-            unsafe { node.owner.as_mut() }.elements = node.next;
-        }
-
-        let owner = unsafe { node.owner.as_mut() };
-        if owner.elements.is_none() {
-            if let Some(mut next) = owner.next {
-                let next = unsafe { next.as_mut() };
-                next.prev = owner.prev;
-            }
-
-            if let Some(mut prev) = owner.prev {
-                let prev = unsafe { prev.as_mut() };
-                prev.next = owner.next;
-            } else {
-                self.freq_list.head = owner.next;
-            }
-
-            owner.next = None;
-
-            // Drop the node, since the node is empty now.
-            // TODO: low frequency count optimization, where we don't dealloc
-            // very low frequency counts since we're likely to just realloc them
-            // sooner than later.
-            unsafe { Box::from_raw(owner) };
-            self.freq_list.len -= 1;
-        }
-        self.len -= 1;
-
-        node.value
     }
 
     /// Returns the current capacity of the cache.
