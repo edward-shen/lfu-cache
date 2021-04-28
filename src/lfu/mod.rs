@@ -214,7 +214,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         })
     }
 
-    /// Gets the given key's corresponding entry in the map for in-place
+    /// Gets the given key's corresponding entry in the LFU cache for in-place
     /// manipulation. If the key refers to an occupied entry, that entry then is
     /// immediately considered accessed, even if no reading or writing is
     /// performed. This behavior is a limitation of the Entry API.

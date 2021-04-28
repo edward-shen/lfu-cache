@@ -1,10 +1,10 @@
+use std::collections::hash_map::{
+    OccupiedEntry as InnerOccupiedEntry, VacantEntry as InnerVacantEntry,
+};
 use std::hash::Hash;
+use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
-use std::{
-    collections::hash_map::{OccupiedEntry as InnerOccupiedEntry, VacantEntry as InnerVacantEntry},
-    num::NonZeroUsize,
-};
 
 use super::util::remove_entry_pointer;
 use super::{FrequencyList, LfuEntry};
@@ -12,7 +12,8 @@ use super::{FrequencyList, LfuEntry};
 /// A view into a single entry in the LFU cache, which may either be vacant or
 /// occupied.
 ///
-/// This `enum` is constructed from [`LfuCache::entry`].
+/// This `enum` is constructed from the `entry` function on any of the LFU
+/// caches.
 pub enum Entry<'a, Key: Hash + Eq, Value> {
     /// An occupied entry.
     Occupied(OccupiedEntry<'a, Key, Value>),
@@ -22,6 +23,8 @@ pub enum Entry<'a, Key: Hash + Eq, Value> {
 
 /// A view into an occupied entry in a LFU cache. It is part of the [`Entry`]
 /// enum.
+// This structure is re-exported at the root, so it's okay to be repetitive.
+#[allow(clippy::module_name_repetitions)]
 pub struct OccupiedEntry<'a, Key: Hash + Eq, Value> {
     inner: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
     freq_list: &'a mut FrequencyList<Key, Value>,
@@ -104,6 +107,8 @@ impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
 }
 
 /// A view into a vacant entry in a LFU cache. It is part of the [`Entry`] enum.
+// This structure is re-exported at the root, so it's okay to be repetitive.
+#[allow(clippy::module_name_repetitions)]
 pub struct VacantEntry<'a, Key: Hash + Eq, Value> {
     inner: InnerVacantEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
     key: Rc<Key>,

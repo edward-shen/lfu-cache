@@ -5,8 +5,8 @@ use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use crate::iter::LfuCacheIter;
 use crate::lfu::LfuCache;
+use crate::{iter::LfuCacheIter, Entry};
 
 /// A LFU cache with additional eviction conditions based on the time an entry
 /// has been in cache.
@@ -130,6 +130,19 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
     pub fn remove(&mut self, key: &Key) -> Option<Value> {
         self.evict_expired();
         self.cache.remove(key)
+    }
+
+    /// Gets the given key's corresponding entry in the LFU cache for in-place
+    /// manipulation. If the key refers to an occupied entry, that entry then is
+    /// immediately considered accessed, even if no reading or writing is
+    /// performed. This behavior is a limitation of the Entry API.
+    ///
+    /// Calling this method method will automatically evict expired entries
+    /// before returning the entry struct.
+    #[inline]
+    pub fn entry(&mut self, key: Key) -> Entry<'_, Key, Value> {
+        self.evict_expired();
+        self.cache.entry(key)
     }
 
     /// Evicts the least frequently used value and returns it. If the cache is
