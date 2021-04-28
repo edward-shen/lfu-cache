@@ -653,6 +653,16 @@ mod remove {
         assert!(cache.get(&3).is_some());
         assert!(cache.get(&1).is_some());
     }
+
+    #[test]
+    fn remove_connects_next_owner() {
+        let mut cache = LfuCache::unbounded();
+        cache.insert(1, 1);
+        cache.insert(2, 2);
+        assert_eq!(cache.get(&1), Some(&1));
+        assert_eq!(cache.remove(&2), Some(2));
+        assert_eq!(cache.get(&1), Some(&1));
+    }
 }
 
 #[cfg(test)]

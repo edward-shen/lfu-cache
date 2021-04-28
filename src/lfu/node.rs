@@ -314,4 +314,27 @@ mod node {
         node.push((&mut entry).into());
         assert_eq!(node.peek(), Some(&2));
     }
+
+    #[test]
+    fn len_is_consistent() {
+        let mut node = init_node();
+        assert_eq!(node.len(), 0);
+        let mut entry_0 = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry_1 = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
+        let mut entry_2 = LfuEntry::new(NonNull::dangling(), Rc::new(1), 2);
+        node.push((&mut entry_0).into());
+        assert_eq!(node.len(), 1);
+        node.push((&mut entry_1).into());
+        assert_eq!(node.len(), 2);
+        node.push((&mut entry_2).into());
+        assert_eq!(node.len(), 3);
+        node.pop();
+        assert_eq!(node.len(), 2);
+        node.pop();
+        assert_eq!(node.len(), 1);
+        node.pop();
+        assert_eq!(node.len(), 0);
+        node.pop();
+        assert_eq!(node.len(), 0);
+    }
 }
