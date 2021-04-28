@@ -49,6 +49,7 @@ impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
     }
 
     /// Take the ownership of the key and value from the map.
+    #[must_use]
     pub fn remove_entry(self) -> (Rc<Key>, Value) {
         let (key, node) = self.inner.remove_entry();
         let node = *unsafe { Box::from_raw(node.as_ptr()) };
@@ -58,6 +59,7 @@ impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
 
     /// Gets a reference to the value in the entry.
     #[inline]
+    #[must_use]
     pub fn get(&self) -> &Value {
         &unsafe { self.inner.get().as_ref() }.value
     }
@@ -77,6 +79,7 @@ impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
     /// If you need multiple references to the `OccupiedEntry`, see
     /// [`Self::get_mut`].
     #[inline]
+    #[must_use]
     pub fn into_mut(self) -> &'a mut Value {
         &mut unsafe { self.inner.into_mut().as_mut() }.value
     }
@@ -92,6 +95,7 @@ impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
     }
 
     /// Takes the value out of the entry, and returns it.
+    #[must_use]
     pub fn remove(self) -> Value {
         let node = self.inner.remove();
         let node = *unsafe { Box::from_raw(node.as_ptr()) };
@@ -154,9 +158,9 @@ impl<'a, Key: Hash + Eq, Value> VacantEntry<'a, Key, Value> {
     pub fn insert(self, value: Value) -> &'a mut Value {
         if let Some(capacity) = self.cache_capacity {
             if capacity.get() == *self.cache_len {
-                self.freq_list.pop_lfu().map(|mut entry_ptr| {
+                if let Some(mut entry_ptr) = self.freq_list.pop_lfu() {
                     unsafe { Box::from_raw(entry_ptr.as_mut()) };
-                });
+                }
             }
         } else {
             *self.cache_len += 1;
