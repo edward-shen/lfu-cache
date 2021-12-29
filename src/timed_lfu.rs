@@ -71,7 +71,7 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
     #[inline]
     pub fn set_capacity(&mut self, new_capacity: usize) {
         self.evict_expired();
-        self.cache.set_capacity(new_capacity)
+        self.cache.set_capacity(new_capacity);
     }
 
     /// Inserts a value into the cache using the provided key. If the value
@@ -248,7 +248,7 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
     #[inline]
     pub fn shrink_to_fit(&mut self) {
         self.evict_expired();
-        self.set_capacity(self.len())
+        self.set_capacity(self.len());
     }
 
     /// Returns an iterator over the keys of the LFU cache in any order. Note

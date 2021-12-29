@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
@@ -6,7 +7,7 @@ use std::iter::{FromIterator, FusedIterator};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
-use std::{borrow::Borrow, collections::hash_map};
+use std::collections::hash_map;
 
 use crate::{Entry, LfuCacheIter};
 
@@ -343,7 +344,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Returns an iterator over the keys of the LFU cache in any order.
     #[inline]
     pub fn keys(&self) -> impl Iterator<Item = &Key> + FusedIterator + '_ {
-        self.lookup.0.keys().map(|key| key.borrow())
+        self.lookup.0.keys().map(Borrow::borrow)
     }
 
     /// Returns an iterator over the values of the LFU cache in any order. Note
