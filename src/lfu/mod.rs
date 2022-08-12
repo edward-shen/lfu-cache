@@ -268,6 +268,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
             // SAFETY: This is fine since self is uniquely borrowed.
             let key = unsafe { entry_ptr.as_ref().key.as_ref() };
             self.lookup.0.remove(key);
+            self.len -= 1;
 
             // SAFETY: entry_ptr is guaranteed to be a live reference and is
             // is separated from the data structure as a guarantee of pop_lfu.

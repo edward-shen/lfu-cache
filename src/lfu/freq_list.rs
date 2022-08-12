@@ -176,9 +176,21 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
     #[inline]
     pub(super) fn pop_lfu(&mut self) -> Option<NonNull<LfuEntry<Key, T>>> {
-        self.head
-            .as_mut()
-            .and_then(|node| unsafe { node.as_mut() }.pop())
+        if let Some(head) = self.head.as_mut() {
+            // SAFETY - mutable reference
+            let head_node = unsafe { head.as_mut() };
+            let item = head_node.pop();
+            if head_node.elements.is_none() {
+                self.len -= 1;
+                self.head = head_node.prev;
+                if let Some(mut next) = head_node.next {
+                    let next_node = unsafe { next.as_mut() };
+                    next_node.next = head_node.next;
+                }
+            }
+            return item;
+        }
+        None
     }
 
     #[inline]
