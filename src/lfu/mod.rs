@@ -540,6 +540,16 @@ mod pop {
         assert_eq!(None, cache.pop_lfu());
         assert_eq!(None, cache.pop_lfu_key_value());
     }
+
+    #[test]
+    fn set_capacity() {
+        let mut cache = LfuCache::unbounded();
+        for i in 0..100 {
+            cache.insert(i, i + 100);
+        }
+        cache.set_capacity(10);
+        assert_eq!(cache.len(), 10);
+    }
 }
 
 #[cfg(test)]
