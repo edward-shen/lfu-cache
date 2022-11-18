@@ -543,13 +543,30 @@ mod pop {
     }
 
     #[test]
-    fn set_capacity() {
+    fn set_capacity_evicts_multiple() {
         let mut cache = LfuCache::unbounded();
         for i in 0..100 {
             cache.insert(i, i + 100);
         }
         cache.set_capacity(10);
         assert_eq!(cache.len(), 10);
+    }
+
+    #[test]
+    fn pop_multiple_varying_frequencies() {
+        let mut cache = LfuCache::unbounded();
+        for i in 0..100 {
+            cache.insert(i, i + 100);
+        }
+        for i in 0..100 {
+            for _ in 0..i*i {
+                cache.get(&i).unwrap();
+            }
+        }
+        for i in 0..100 {
+            assert_eq!(100 - i, cache.len());
+            assert_eq!(Some(i + 100), cache.pop_lfu());
+        }
     }
 }
 
