@@ -182,11 +182,9 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
             let item = head_node.pop();
             if head_node.elements.is_none() {
                 self.len -= 1;
-                self.head = head_node.prev;
-                if let Some(mut next) = head_node.next {
-                    let next_node = unsafe { next.as_mut() };
-                    next_node.next = head_node.next;
-                }
+                // Remove the now empty head
+                self.head = head_node.next;
+                head_node.prev = None;
             }
             return item;
         }
