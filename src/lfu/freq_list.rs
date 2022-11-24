@@ -64,7 +64,7 @@ impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
 
 impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     #[inline]
-    pub(super) fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self { head: None, len: 0 }
     }
 
@@ -251,8 +251,8 @@ mod frequency_list {
         assert_eq!(entry_0_ref.owner, list.head.unwrap());
 
         unsafe {
-            Box::from_raw(entry_0.as_ptr());
-            Box::from_raw(entry_1.as_ptr());
+            drop(Box::from_raw(entry_0.as_ptr()));
+            drop(Box::from_raw(entry_1.as_ptr()));
         }
     }
 

@@ -201,7 +201,7 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
     /// Returns the current capacity of the cache.
     #[inline]
     #[must_use]
-    pub fn capacity(&self) -> Option<NonZeroUsize> {
+    pub const fn capacity(&self) -> Option<NonZeroUsize> {
         self.cache.capacity()
     }
 
@@ -211,7 +211,7 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
     /// [`Self::evict_expired`] if this is a concern.
     #[inline]
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.cache.len()
     }
 
@@ -220,14 +220,14 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
     /// items. Consider calling [`Self::evict_expired`] if this is a concern.
     #[inline]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
 
     /// Returns if the cache is unbounded.
     #[inline]
     #[must_use]
-    pub fn is_unbounded(&self) -> bool {
+    pub const fn is_unbounded(&self) -> bool {
         self.cache.is_unbounded()
     }
 

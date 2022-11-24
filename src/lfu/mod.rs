@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::collections::hash_map;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
@@ -7,7 +8,6 @@ use std::iter::{FromIterator, FusedIterator};
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
-use std::collections::hash_map;
 
 use crate::{Entry, LfuCacheIter};
 
@@ -300,7 +300,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Returns the current capacity of the cache.
     #[inline]
     #[must_use]
-    pub fn capacity(&self) -> Option<NonZeroUsize> {
+    pub const fn capacity(&self) -> Option<NonZeroUsize> {
         self.capacity
     }
 
@@ -308,21 +308,21 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// time operation.
     #[inline]
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
     }
 
     /// Returns if the cache contains no elements.
     #[inline]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Returns if the cache is unbounded.
     #[inline]
     #[must_use]
-    pub fn is_unbounded(&self) -> bool {
+    pub const fn is_unbounded(&self) -> bool {
         self.capacity.is_none()
     }
 

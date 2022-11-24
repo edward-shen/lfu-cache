@@ -156,7 +156,7 @@ mod node {
             );
 
             // unleak box
-            Box::from_raw(head.as_mut());
+            drop(Box::from_raw(head.as_mut()));
         }
     }
 
@@ -191,7 +191,7 @@ mod node {
             );
 
             // unleak box
-            Box::from_raw(head.as_mut());
+            drop(Box::from_raw(head.as_mut()));
         }
     }
 
