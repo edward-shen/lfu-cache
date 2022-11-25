@@ -163,9 +163,7 @@ impl<'a, Key: Hash + Eq, Value> VacantEntry<'a, Key, Value> {
     pub fn insert(self, value: Value) -> &'a mut Value {
         if let Some(capacity) = self.cache_capacity {
             if capacity.get() == *self.cache_len {
-                if let Some(mut entry_ptr) = self.freq_list.pop_lfu() {
-                    unsafe { Box::from_raw(entry_ptr.as_mut()) };
-                }
+                self.freq_list.pop_lfu();
             }
         } else {
             *self.cache_len += 1;

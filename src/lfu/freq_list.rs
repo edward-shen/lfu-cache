@@ -3,6 +3,8 @@ use std::hash::Hash;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
+use super::lfu_entry::Detached;
+use super::node::WithFrequency;
 use super::{LfuEntry, Node};
 
 #[derive(Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -55,9 +57,9 @@ impl<Key: Hash + Eq, T: Display> Display for FrequencyList<Key, T> {
 
 impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
     fn drop(&mut self) {
-        if let Some(mut ptr) = self.head {
+        if let Some(ptr) = self.head {
             // SAFETY: self is exclusively accessed
-            unsafe { Box::from_raw(ptr.as_mut()) };
+            unsafe { Box::from_raw(ptr.as_ptr()) };
         }
     }
 }
@@ -72,16 +74,12 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     /// item. Callers must make sure to free the returning pointer, usually via
     /// `Box::from_raw(foo.as_ptr())`.
     pub(super) fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<LfuEntry<Key, T>> {
-        let mut head = match self.head {
+        let head = match self.head {
             Some(head) if unsafe { head.as_ref() }.frequency == 0 => head,
             _ => self.init_front(),
         };
 
-        let entry = Box::new(LfuEntry::new(head, key, value));
-        let entry = NonNull::from(Box::leak(entry));
-        // SAFETY: self is exclusively accessed
-        unsafe { head.as_mut() }.push(entry);
-        entry
+        Node::push(head, Detached::new(key, value))
     }
 
     fn init_front(&mut self) -> NonNull<Node<Key, T>> {
@@ -113,89 +111,60 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     }
 
     pub(super) fn update(&mut self, mut entry: NonNull<LfuEntry<Key, T>>) {
-        let entry = unsafe { entry.as_mut() };
-        // Remove the entry from the node.
-        // SAFETY: self is exclusively accessed
-        if let Some(mut prev) = entry.prev {
-            unsafe { prev.as_mut() }.next = entry.next;
-        } else {
-            unsafe { entry.owner.as_mut() }.elements = entry.next;
-        }
-
-        if let Some(mut next) = entry.next {
-            unsafe { next.as_mut() }.prev = entry.prev;
-        }
-
         // Generate the next frequency list node if it doesn't exist or isn't
         // n + 1 of the current node's frequency.
         // SAFETY: self is exclusively accessed
-        let freq_list_node = unsafe { entry.owner.as_mut() };
-
-        let freq_list_node_freq = freq_list_node.frequency;
-        match freq_list_node.next {
+        let freq_list_node = unsafe { (*entry.as_ptr()).owner.as_ptr() };
+        let freq_list_node_freq = unsafe { &*freq_list_node }.frequency;
+        // Create next node if needed
+        let next_node = match unsafe { &*freq_list_node }.next {
             // SAFETY: self is exclusively accessed
-            Some(node) if unsafe { node.as_ref() }.frequency == freq_list_node_freq + 1 => (),
+            Some(node) if unsafe { node.as_ref() }.frequency == freq_list_node_freq + 1 => node,
             _ => {
-                freq_list_node.create_increment();
                 self.len += 1;
+                Node::create_increment(NonNull::new(freq_list_node).unwrap())
             }
-        }
+        };
 
-        // TODO: move the insert item into next_owner lines up here.
-        // This is blocked on 1.53: https://link.eddie.sh/40IiP
+        // Remove from current frequency node
+        let freq_list_node = unsafe { entry.as_mut().owner.as_mut() };
+        let detached = freq_list_node.remove_ref(entry);
+
+        // Insert into next node
+        Node::push_ref(next_node, detached);
 
         // Drop frequency list node if it contains no elements
         if freq_list_node.elements.is_none() {
-            if let Some(mut prev) = freq_list_node.prev {
-                // SAFETY: self is exclusively accessed
-                unsafe { prev.as_mut() }.next = freq_list_node.next;
-            } else {
-                self.head = freq_list_node.next;
+            let freq_head = unsafe { Box::from_raw(freq_list_node) };
+            if self.head == Some(NonNull::from(&*freq_head)) {
+                self.head = freq_head.next;
             }
 
-            if let Some(mut next) = freq_list_node.next {
-                // SAFETY: self is exclusively accessed
-                unsafe { next.as_mut() }.prev = freq_list_node.prev;
-            }
-
-            let mut boxed = unsafe { Box::from_raw(freq_list_node) };
-
-            // Insert item into next_owner
-            unsafe { boxed.next.unwrap().as_mut() }.push(entry.into());
-
-            // Because our drop implementation of Node recursively frees the
-            // the next value, we need to unset the next value before dropping
-            // the box lest we free the entire list.
-            boxed.next = None;
+            freq_head.detach();
             self.len -= 1;
-        } else {
-            // Insert item into next_owner
-            unsafe { freq_list_node.next.unwrap().as_mut() }.push(entry.into());
         }
     }
 
     #[inline]
-    pub(super) fn pop_lfu(&mut self) -> Option<NonNull<LfuEntry<Key, T>>> {
-        if let Some(head) = self.head.as_mut() {
-            // SAFETY - mutable reference
-            let head_node = unsafe { head.as_mut() };
-            let item = head_node.pop();
-            if head_node.elements.is_none() {
-                self.len -= 1;
-                // Remove the now empty head
-                self.head = head_node.next;
-                head_node.prev = None;
-            }
-            return item;
+    pub(super) fn pop_lfu(&mut self) -> Option<WithFrequency<Detached<Key, T>>> {
+        let mut head_node_ptr = self.head?;
+        let head_node = unsafe { head_node_ptr.as_mut() };
+
+        let item = head_node.pop();
+        if head_node.elements.is_none() {
+            self.len -= 1;
+            // Remove the now empty head
+            self.head = head_node.next;
+
+            let owned = unsafe { Box::from_raw(head_node_ptr.as_ptr()) };
+            owned.detach();
         }
-        None
+        item
     }
 
     #[inline]
     pub(super) fn peek_lfu(&self) -> Option<&T> {
-        self.head
-            .as_ref()
-            .and_then(|node| unsafe { node.as_ref() }.peek())
+        self.head.and_then(|node| unsafe { node.as_ref() }.peek())
     }
 
     pub(super) fn frequencies(&self) -> Vec<usize> {
@@ -242,8 +211,8 @@ mod frequency_list {
     #[test]
     fn insert_non_empty() {
         let mut list = init_list();
-        let entry_0 = NonNull::new(list.insert(Rc::new(1), 2).as_ptr()).unwrap();
-        let entry_1 = NonNull::new(list.insert(Rc::new(3), 4).as_ptr()).unwrap();
+        let entry_0 = list.insert(Rc::new(1), 2);
+        let entry_1 = list.insert(Rc::new(3), 4);
 
         let entry_0_ref = unsafe { entry_0.as_ref() };
         let entry_1_ref = unsafe { entry_1.as_ref() };
@@ -269,21 +238,28 @@ mod frequency_list {
     #[test]
     fn insert_non_empty_non_freq_zero() {
         let mut list = init_list();
-        let mut entry_0 = unsafe { Box::from_raw(list.insert(Rc::new(1), 2).as_ptr()) };
-        list.update(NonNull::from(&mut *entry_0));
-        let entry_1 = unsafe { Box::from_raw(list.insert(Rc::new(3), 4).as_ptr()) };
+        let entry_0_ptr = list.insert(Rc::new(1), 2).as_ptr();
+        list.update(NonNull::new(entry_0_ptr).unwrap());
+        let entry_1_ptr = list.insert(Rc::new(3), 4).as_ptr();
 
         // validate entry_0
+        let entry_0 = unsafe { &*entry_0_ptr };
         assert_eq!(entry_0.prev, None);
         assert_eq!(entry_0.next, None);
         assert_eq!(entry_0.value, 2);
         assert_ne!(entry_0.owner, list.head.unwrap());
 
         // validate entry_1
+        let entry_1 = unsafe { &*entry_1_ptr };
         assert_eq!(entry_1.prev, None);
         assert_eq!(entry_1.next, None);
         assert_eq!(entry_1.value, 4);
         assert_eq!(entry_1.owner, list.head.unwrap());
+
+        unsafe {
+            drop(Box::from_raw(entry_0_ptr));
+            drop(Box::from_raw(entry_1_ptr));
+        }
     }
 
     #[test]

@@ -16,7 +16,7 @@ pub(self) use lfu_entry::LfuEntry;
 pub(self) use node::Node;
 
 use self::entry::{OccupiedEntry, VacantEntry};
-use self::util::remove_entry_pointer;
+use self::node::WithFrequency;
 
 pub mod entry;
 mod freq_list;
@@ -56,6 +56,14 @@ impl<Key: Hash + Eq + Debug, Value> Debug for LookupMap<Key, Value> {
 
 unsafe impl<Key: Hash + Eq, Value> Send for LfuCache<Key, Value> {}
 unsafe impl<Key: Hash + Eq, Value> Sync for LfuCache<Key, Value> {}
+
+impl<Key: Hash + Eq, Value> Drop for LookupMap<Key, Value> {
+    fn drop(&mut self) {
+        for (_, v) in self.0.drain() {
+            unsafe { Box::from_raw(v.as_ptr()) };
+        }
+    }
+}
 
 impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Creates a LFU cache with a capacity bound. When the capacity is reached,
@@ -176,7 +184,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
 
     /// Like [`Self::get`], but also returns the Rc as well.
     pub(crate) fn get_rc_key_value(&mut self, key: &Key) -> Option<(Rc<Key>, &Value)> {
-        let entry = self.lookup.0.get(key)?;
+        let entry = self.lookup.0.get_mut(key)?;
         self.freq_list.update(*entry);
         // SAFETY: This is fine because self is uniquely borrowed
         let entry = unsafe { entry.as_ref() };
@@ -202,16 +210,28 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// Removes a value from the cache by key, if it exists.
     #[inline]
     pub fn remove(&mut self, key: &Key) -> Option<Value> {
-        self.lookup.0.remove(key).map(|mut node| {
+        self.lookup.0.remove(key).map(|node| {
             // SAFETY: We have unique access to self. At this point, we've
             // removed the entry from the lookup map but haven't removed it from
             // the frequency data structure, so we need to clean it up there
             // before returning the value.
-            remove_entry_pointer(
-                *unsafe { Box::from_raw(node.as_mut()) },
-                &mut self.freq_list,
-                &mut self.len,
-            )
+
+            let mut freq_node = unsafe { node.as_ref() }.owner;
+            let detached = unsafe { freq_node.as_mut() }.remove(node);
+
+            // freq_node no longer is being referred to by lfu_entry
+
+            if unsafe { freq_node.as_ref() }.elements.is_none() {
+                let freq_head = unsafe { Box::from_raw(freq_node.as_ptr()) };
+                if self.freq_list.head == Some(NonNull::from(&*freq_head)) {
+                    self.freq_list.head = freq_head.next;
+                }
+
+                freq_head.detach();
+                self.freq_list.len -= 1;
+            }
+            self.len -= 1;
+            detached.value
         })
     }
 
@@ -223,8 +243,8 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     pub fn entry(&mut self, key: Key) -> Entry<'_, Key, Value> {
         let key = Rc::new(key);
         match self.lookup.0.entry(Rc::clone(&key)) {
-            hash_map::Entry::Occupied(entry) => {
-                self.freq_list.update(*entry.get());
+            hash_map::Entry::Occupied(mut entry) => {
+                self.freq_list.update(*entry.get_mut());
                 Entry::Occupied(OccupiedEntry::new(
                     entry,
                     &mut self.freq_list,
@@ -264,23 +284,24 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// count, then the most recently added key-value pair is evicted.
     #[inline]
     pub fn pop_lfu_key_value_frequency(&mut self) -> Option<(Key, Value, usize)> {
-        self.freq_list.pop_lfu().map(|mut entry_ptr| {
-            // SAFETY: This is fine since self is uniquely borrowed.
-            let key = unsafe { entry_ptr.as_ref().key.as_ref() };
-            self.lookup.0.remove(key);
-            self.len -= 1;
+        self.freq_list
+            .pop_lfu()
+            .map(|WithFrequency(freq, detached)| {
+                // SAFETY: This is fine since self is uniquely borrowed.
+                let key = detached.key.as_ref();
+                self.lookup.0.remove(key);
+                self.len -= 1;
 
-            // SAFETY: entry_ptr is guaranteed to be a live reference and is
-            // is separated from the data structure as a guarantee of pop_lfu.
-            // As a result, at this point, we're guaranteed that we have the
-            // only reference of entry_ptr.
-            let entry = unsafe { Box::from_raw(entry_ptr.as_mut()) };
-            let key = match Rc::try_unwrap(entry.key) {
-                Ok(k) => k,
-                Err(_) => unsafe { unreachable_unchecked() },
-            };
-            (key, entry.value, unsafe { entry.owner.as_ref().frequency })
-        })
+                // SAFETY: entry_ptr is guaranteed to be a live reference and is
+                // is separated from the data structure as a guarantee of pop_lfu.
+                // As a result, at this point, we're guaranteed that we have the
+                // only reference of entry_ptr.
+                let key = match Rc::try_unwrap(detached.key) {
+                    Ok(k) => k,
+                    Err(_) => unsafe { unreachable_unchecked() },
+                };
+                (key, detached.value, freq)
+            })
     }
 
     /// Clears the cache, returning the iterator of the previous cached values.
@@ -416,15 +437,6 @@ impl<Key: Hash + Eq, Value> IntoIterator for LfuCache<Key, Value> {
     }
 }
 
-impl<Key: Hash + Eq, Value> Drop for LfuCache<Key, Value> {
-    fn drop(&mut self) {
-        for ptr in self.lookup.0.values_mut() {
-            // SAFETY: self is exclusively accessed
-            unsafe { Box::from_raw(ptr.as_mut()) };
-        }
-    }
-}
-
 #[cfg(test)]
 mod get {
     use super::LfuCache;
@@ -555,17 +567,17 @@ mod pop {
     #[test]
     fn pop_multiple_varying_frequencies() {
         let mut cache = LfuCache::unbounded();
-        for i in 0..100 {
-            cache.insert(i, i + 100);
+        for i in 0..10 {
+            cache.insert(i, i + 10);
         }
-        for i in 0..100 {
-            for _ in 0..i*i {
+        for i in 0..10 {
+            for _ in 0..i * i {
                 cache.get(&i).unwrap();
             }
         }
-        for i in 0..100 {
-            assert_eq!(100 - i, cache.len());
-            assert_eq!(Some(i + 100), cache.pop_lfu());
+        for i in 0..10 {
+            assert_eq!(10 - i, cache.len());
+            assert_eq!(Some(i + 10), cache.pop_lfu());
         }
     }
 }
@@ -579,6 +591,7 @@ mod remove {
         let mut cache = LfuCache::unbounded();
         cache.insert(1, 2);
         assert_eq!(cache.remove(&1), Some(2));
+
         assert!(cache.is_empty());
         assert_eq!(cache.freq_list.len, 0);
     }
