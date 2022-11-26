@@ -10,15 +10,12 @@ use super::{LfuEntry, Node};
 #[derive(Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(super) struct FrequencyList<Key: Hash + Eq, T> {
     pub(super) head: Option<NonNull<Node<Key, T>>>,
-    pub(super) len: usize,
 }
 
 #[cfg(not(tarpaulin_include))]
 impl<Key: Hash + Eq, T> Debug for FrequencyList<Key, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut dbg = f.debug_struct("FrequencyList");
-        dbg.field("len", &self.len);
-
         let mut node = self.head;
         while let Some(cur_node) = node {
             let cur_node = unsafe { cur_node.as_ref() };
@@ -36,7 +33,6 @@ impl<Key: Hash + Eq, T> Debug for FrequencyList<Key, T> {
 #[cfg(not(tarpaulin_include))]
 impl<Key: Hash + Eq, T: Display> Display for FrequencyList<Key, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Total elements: {}", self.len)?;
         let mut cur_node = self.head;
 
         while let Some(ref node) = cur_node {
@@ -67,7 +63,7 @@ impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
 impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     #[inline]
     pub(super) const fn new() -> Self {
-        Self { head: None, len: 0 }
+        Self { head: None }
     }
 
     /// Inserts an item into the frequency list, returning a pointer to the
@@ -105,7 +101,6 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         }
 
         self.head = Some(node);
-        self.len += 1;
 
         node
     }
@@ -120,10 +115,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         let next_node = match unsafe { &*freq_list_node }.next {
             // SAFETY: self is exclusively accessed
             Some(node) if unsafe { node.as_ref() }.frequency == freq_list_node_freq + 1 => node,
-            _ => {
-                self.len += 1;
-                Node::create_increment(NonNull::new(freq_list_node).unwrap())
-            }
+            _ => Node::create_increment(NonNull::new(freq_list_node).unwrap()),
         };
 
         // Remove from current frequency node
@@ -141,7 +133,6 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
             }
 
             freq_head.detach();
-            self.len -= 1;
         }
     }
 
@@ -152,7 +143,6 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
         let item = head_node.pop();
         if head_node.elements.is_none() {
-            self.len -= 1;
             // Remove the now empty head
             self.head = head_node.next;
 
@@ -178,6 +168,20 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
         freqs
     }
+
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        let mut count = 0;
+
+        let mut cur_head = self.head;
+        while let Some(node) = cur_head {
+            let cur_node = unsafe { node.as_ref() };
+            count += 1;
+            cur_head = cur_node.next;
+        }
+
+        count
+    }
 }
 
 #[cfg(test)]
@@ -194,7 +198,7 @@ mod frequency_list {
     fn new_is_empty() {
         let list = init_list();
         assert!(list.head.is_none());
-        assert_eq!(list.len, 0);
+        assert_eq!(list.len(), 0);
         assert!(list.frequencies().is_empty());
     }
 
@@ -267,7 +271,7 @@ mod frequency_list {
         let mut list = init_list();
         let front_node = list.init_front();
         assert_eq!(list.head, Some(front_node));
-        assert_eq!(list.len, 1);
+        assert_eq!(list.len(), 1);
 
         let front_node = unsafe { front_node.as_ref() };
         assert_eq!(front_node.prev, None);
@@ -280,7 +284,7 @@ mod frequency_list {
 
         let back_node = list.init_front();
         assert_eq!(list.head, Some(back_node));
-        assert_eq!(list.len, 1);
+        assert_eq!(list.len(), 1);
         {
             let back_node = unsafe { back_node.as_ref() };
             assert_eq!(back_node.prev, None);
@@ -289,7 +293,7 @@ mod frequency_list {
 
         let middle_node = list.init_front();
         assert_eq!(list.head, Some(middle_node));
-        assert_eq!(list.len, 2);
+        assert_eq!(list.len(), 2);
         {
             // validate middle node connections
             let middle_node = unsafe { middle_node.as_ref() };
@@ -305,7 +309,7 @@ mod frequency_list {
 
         let front_node = list.init_front();
         assert_eq!(list.head, Some(front_node));
-        assert_eq!(list.len, 3);
+        assert_eq!(list.len(), 3);
         {
             // validate front node connections
             let front_node = unsafe { front_node.as_ref() };

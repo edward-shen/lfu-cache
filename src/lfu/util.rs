@@ -44,7 +44,6 @@ where
         // very low frequency counts since we're likely to just realloc them
         // sooner than later.
         unsafe { Box::from_raw(owner) };
-        freq_list.len -= 1;
     }
     *len -= 1;
 

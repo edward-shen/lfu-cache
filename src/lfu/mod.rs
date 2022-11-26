@@ -247,7 +247,6 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
                 }
 
                 freq_head.detach();
-                self.freq_list.len -= 1;
             }
             self.len -= 1;
             detached.value
@@ -612,7 +611,7 @@ mod remove {
         assert_eq!(cache.remove(&1), Some(2));
 
         assert!(cache.is_empty());
-        assert_eq!(cache.freq_list.len, 0);
+        assert_eq!(cache.freq_list.len(), 0);
     }
 
     #[test]
@@ -634,7 +633,7 @@ mod remove {
         assert_eq!(cache.remove(&3), Some(4));
 
         assert!(cache.is_empty());
-        assert_eq!(cache.freq_list.len, 0);
+        assert_eq!(cache.freq_list.len(), 0);
     }
 
     #[test]
@@ -736,11 +735,11 @@ mod bookkeeping {
     fn getting_one_element_has_constant_freq_list_size() {
         let mut cache = LfuCache::unbounded();
         cache.insert(1, 2);
-        assert_eq!(cache.freq_list.len, 1);
+        assert_eq!(cache.freq_list.len(), 1);
 
         for _ in 0..100 {
             cache.get(&1);
-            assert_eq!(cache.freq_list.len, 1);
+            assert_eq!(cache.freq_list.len(), 1);
         }
     }
 
@@ -749,11 +748,11 @@ mod bookkeeping {
         let mut cache = LfuCache::unbounded();
         cache.insert(1, 2);
         cache.insert(3, 4);
-        assert_eq!(cache.freq_list.len, 1);
+        assert_eq!(cache.freq_list.len(), 1);
         assert!(cache.get(&1).is_some());
-        assert_eq!(cache.freq_list.len, 2);
+        assert_eq!(cache.freq_list.len(), 2);
         assert!(cache.get(&3).is_some());
-        assert_eq!(cache.freq_list.len, 1);
+        assert_eq!(cache.freq_list.len(), 1);
     }
 
     #[test]
@@ -763,11 +762,11 @@ mod bookkeeping {
         cache.get(&1);
         cache.get(&1);
         cache.insert(3, 4);
-        assert_eq!(cache.freq_list.len, 2);
+        assert_eq!(cache.freq_list.len(), 2);
         cache.get(&3);
-        assert_eq!(cache.freq_list.len, 2);
+        assert_eq!(cache.freq_list.len(), 2);
         cache.get(&3);
-        assert_eq!(cache.freq_list.len, 1);
+        assert_eq!(cache.freq_list.len(), 1);
     }
 
     #[test]
