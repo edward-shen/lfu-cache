@@ -133,6 +133,8 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     /// via `Box::from_raw(foo.as_ptr())`.
     pub(super) fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<LfuEntry<Key, T>> {
         // Gets or creates a node with a frequency of zero.
+        // Lint false positive; the match guard is unaccounted for.
+        #[allow(clippy::option_if_let_else)]
         let head = match self.head {
             Some(head) if unsafe { head.as_ref() }.frequency == 0 => head,
             _ => self.init_front(),
@@ -191,6 +193,8 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         let freq_list_node = unsafe { (*entry.as_ptr()).owner.as_ptr() };
         let freq_list_node_freq = unsafe { &*freq_list_node }.frequency;
         // Create next node if needed
+        // false positive, lint doesn't respect match guard.
+        #[allow(clippy::option_if_let_else)]
         let next_node = match unsafe { &*freq_list_node }.next {
             // SAFETY: self is exclusively accessed
             Some(node) if unsafe { node.as_ref() }.frequency == freq_list_node_freq + 1 => node,

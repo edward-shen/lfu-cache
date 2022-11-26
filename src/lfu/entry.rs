@@ -147,6 +147,8 @@ impl<'a, Key: Hash + Eq, Value> VacantEntry<'a, Key, Value> {
     /// Take ownership of the key.
     #[inline]
     #[must_use]
+    // False positive, const can't evaluate self dropping.
+    #[allow(clippy::missing_const_for_fn)]
     pub fn into_key(self) -> Rc<Key> {
         self.key
     }

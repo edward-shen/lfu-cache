@@ -310,6 +310,9 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
                 // is separated from the data structure as a guarantee of pop_lfu.
                 // As a result, at this point, we're guaranteed that we have the
                 // only reference of entry_ptr.
+
+                // false positive, lint doesn't respect match guard.
+                #[allow(clippy::option_if_let_else)]
                 let key = match Rc::try_unwrap(detached.key) {
                     Ok(k) => k,
                     Err(_) => unsafe { unreachable_unchecked() },
