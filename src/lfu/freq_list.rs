@@ -12,6 +12,12 @@ pub(super) struct FrequencyList<Key: Hash + Eq, T> {
     pub(super) head: Option<NonNull<Node<Key, T>>>,
 }
 
+impl<Key: Hash + Eq, Value> Default for FrequencyList<Key, Value> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(not(tarpaulin_include))]
 impl<Key: Hash + Eq, T> Debug for FrequencyList<Key, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
