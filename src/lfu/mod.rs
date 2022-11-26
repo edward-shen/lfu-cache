@@ -371,7 +371,8 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     #[inline]
     #[must_use]
     pub fn frequencies(&self) -> Vec<usize> {
-        self.freq_list.frequencies()
+        // TODO: Breaking change -> return impl iterator
+        self.freq_list.frequencies().collect()
     }
 
     /// Sets the capacity to the amount of objects currently in the cache. If

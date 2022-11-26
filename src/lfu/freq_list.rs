@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
+use std::iter::FusedIterator;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
@@ -243,35 +244,44 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         self.head.and_then(|node| unsafe { node.as_ref() }.peek())
     }
 
-    /// Returns a vec of all frequencies in the list.
-    pub(super) fn frequencies(&self) -> Vec<usize> {
-        let mut freqs = vec![];
-        let mut cur_head = self.head;
-        while let Some(node) = cur_head {
-            let cur_node = unsafe { node.as_ref() };
-            freqs.push(cur_node.frequency);
-            cur_head = cur_node.next;
-        }
-
-        freqs
+    /// Returns an iterator of all frequencies in the list.
+    pub(super) fn frequencies(&self) -> impl Iterator<Item = usize> + FusedIterator + '_ {
+        self.iter().map(|node| node.frequency)
     }
 
     /// Iterates through the frequency list, returning the number of [`Node`]s
     /// in the list.
     #[cfg(test)]
     pub fn len(&self) -> usize {
-        let mut count = 0;
+        self.iter().count()
+    }
 
-        let mut cur_head = self.head;
-        while let Some(node) = cur_head {
-            let cur_node = unsafe { node.as_ref() };
-            count += 1;
-            cur_head = cur_node.next;
-        }
-
-        count
+    /// Returns an iterator over all [`Node`]s in the frequency list.
+    fn iter(&self) -> Iter<'_, Key, T> {
+        Iter(self.head.map(|v| unsafe { v.as_ref() }))
     }
 }
+
+/// An iterator over the [`Node`]s in the frequency list.
+///
+/// This is created by [`FrequencyList::iter`].
+// Note that this internally contains a reference to a Node rather than a
+// pointer to one. This is intentional to associate the lifetime of Iter to the
+// derived frequency list.
+#[derive(Debug)]
+struct Iter<'a, Key: Hash + Eq, Value>(Option<&'a Node<Key, Value>>);
+
+impl<'a, Key: Hash + Eq, Value> Iterator for Iter<'a, Key, Value> {
+    type Item = &'a Node<Key, Value>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ret = self.0?;
+        self.0 = ret.next.map(|v| unsafe { v.as_ref() });
+        Some(ret)
+    }
+}
+
+impl<'a, Key: Hash + Eq, Value> FusedIterator for Iter<'a, Key, Value> {}
 
 #[cfg(test)]
 mod frequency_list {
@@ -288,7 +298,7 @@ mod frequency_list {
         let list = init_list();
         assert!(list.head.is_none());
         assert_eq!(list.len(), 0);
-        assert!(list.frequencies().is_empty());
+        assert!(list.frequencies().count() == 0);
     }
 
     #[test]
@@ -442,11 +452,11 @@ mod frequency_list {
 
         list.update(entry_0);
         assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 0);
-        assert_eq!(list.frequencies(), vec![0, 1]);
+        assert_eq!(list.frequencies().collect::<Vec<_>>(), vec![0, 1]);
         list.update(entry_1);
         list.update(entry_0);
         assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 1);
-        assert_eq!(list.frequencies(), vec![1, 2]);
+        assert_eq!(list.frequencies().collect::<Vec<_>>(), vec![1, 2]);
 
         // unleak entry
         unsafe { Box::from_raw(entry_0.as_ptr()) };
@@ -461,10 +471,10 @@ mod frequency_list {
 
         list.update(entry_0);
         assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 0);
-        assert_eq!(list.frequencies(), vec![0, 1]);
+        assert_eq!(list.frequencies().collect::<Vec<_>>(), vec![0, 1]);
         list.update(entry_0);
         assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 0);
-        assert_eq!(list.frequencies(), vec![0, 2]);
+        assert_eq!(list.frequencies().collect::<Vec<_>>(), vec![0, 2]);
 
         // unleak entry
         unsafe { Box::from_raw(entry_0.as_ptr()) };
