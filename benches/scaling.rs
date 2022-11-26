@@ -1,12 +1,12 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use lfu_cache::LfuCache;
+use lfu_cache::Map;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("insertion unbounded");
     for size in (1000..=10000).step_by(1000) {
         group.throughput(Throughput::Elements(size));
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
-            let mut cache = LfuCache::unbounded();
+            let mut cache = Map::unbounded();
             b.iter(|| {
                 for i in 0..size {
                     cache.insert(i, i);
@@ -20,7 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     for size in (1000..=10000).step_by(1000) {
         group.throughput(Throughput::Elements(size));
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
-            let mut cache = LfuCache::with_capacity((size / 4) as usize);
+            let mut cache = Map::with_capacity((size / 4) as usize);
             b.iter(|| {
                 for i in 0..size {
                     cache.insert(i, i);

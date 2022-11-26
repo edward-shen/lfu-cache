@@ -273,10 +273,10 @@ impl<'a, Key: Hash + Eq, Value: Default> Entry<'a, Key, Value> {
 
 #[cfg(test)]
 mod entry {
-    use crate::LfuCache;
+    use crate::LfuMap;
 
-    fn init_cache() -> LfuCache<i32, i32> {
-        LfuCache::unbounded()
+    fn init_cache() -> LfuMap<i32, i32> {
+        LfuMap::unbounded()
     }
 
     #[test]

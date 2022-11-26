@@ -1,7 +1,7 @@
 use std::hash::Hash;
 use std::iter::FusedIterator;
 
-use crate::LfuCache;
+use crate::LfuMap;
 
 /// A consuming iterator over the key and values of an LFU cache, in order of
 /// least frequently used first.
@@ -9,9 +9,9 @@ use crate::LfuCache;
 /// This is constructed by calling `into_iter` on any cache implementation.
 // This is re-exported at the crate root, so this lint can be safely ignored.
 #[allow(clippy::module_name_repetitions)]
-pub struct LfuCacheIter<Key: Hash + Eq, Value>(pub(crate) LfuCache<Key, Value>);
+pub struct LfuMapIter<Key: Hash + Eq, Value>(pub(crate) LfuMap<Key, Value>);
 
-impl<Key: Hash + Eq, Value> Iterator for LfuCacheIter<Key, Value> {
+impl<Key: Hash + Eq, Value> Iterator for LfuMapIter<Key, Value> {
     type Item = (Key, Value);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -23,9 +23,9 @@ impl<Key: Hash + Eq, Value> Iterator for LfuCacheIter<Key, Value> {
     }
 }
 
-impl<Key: Hash + Eq, Value> FusedIterator for LfuCacheIter<Key, Value> {}
+impl<Key: Hash + Eq, Value> FusedIterator for LfuMapIter<Key, Value> {}
 
-impl<Key: Hash + Eq, Value> ExactSizeIterator for LfuCacheIter<Key, Value> {
+impl<Key: Hash + Eq, Value> ExactSizeIterator for LfuMapIter<Key, Value> {
     #[inline]
     fn len(&self) -> usize {
         self.0.len()
@@ -34,11 +34,11 @@ impl<Key: Hash + Eq, Value> ExactSizeIterator for LfuCacheIter<Key, Value> {
 
 #[cfg(test)]
 mod tests {
-    use crate::LfuCache;
+    use crate::LfuMap;
 
     #[test]
     fn order_in_lfu() {
-        let mut cache = LfuCache::unbounded();
+        let mut cache = LfuMap::unbounded();
         for i in 0..10 {
             cache.insert(i, i);
             cache.get(&i);
@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn size_is_correct() {
-        let mut cache = LfuCache::unbounded();
+        let mut cache = LfuMap::unbounded();
         for i in 0..10 {
             cache.insert(i, i);
         }

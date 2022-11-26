@@ -5,8 +5,8 @@ use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use crate::lfu::LfuCache;
-use crate::{iter::LfuCacheIter, Entry};
+use crate::LfuMap;
+use crate::{iter::LfuMapIter, Entry};
 
 /// A LFU cache with additional eviction conditions based on the time an entry
 /// has been in cache.
@@ -16,13 +16,13 @@ use crate::{iter::LfuCacheIter, Entry};
 // This is re-exported at the crate root, so this lint can be safely ignored.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Eq)]
-pub struct TimedLfuCache<Key: Hash + Eq, Value> {
-    cache: LfuCache<Key, Value>,
+pub struct TimedLfuMap<Key: Hash + Eq, Value> {
+    cache: LfuMap<Key, Value>,
     expiration: Option<Duration>,
     expiry_set: BTreeSet<ExpirationSetEntry<Key>>,
 }
 
-impl<Key: Hash + Eq, Value: PartialEq> PartialEq for TimedLfuCache<Key, Value> {
+impl<Key: Hash + Eq, Value: PartialEq> PartialEq for TimedLfuMap<Key, Value> {
     fn eq(&self, other: &Self) -> bool {
         // We don't need to compare the expiry_heap here since it's meaningless
         // to. Because we insert instants it's almost guaranteed that the
@@ -32,10 +32,10 @@ impl<Key: Hash + Eq, Value: PartialEq> PartialEq for TimedLfuCache<Key, Value> {
     }
 }
 
-unsafe impl<Key: Hash + Eq, Value> Send for TimedLfuCache<Key, Value> {}
-unsafe impl<Key: Hash + Eq, Value> Sync for TimedLfuCache<Key, Value> {}
+unsafe impl<Key: Hash + Eq, Value> Send for TimedLfuMap<Key, Value> {}
+unsafe impl<Key: Hash + Eq, Value> Sync for TimedLfuMap<Key, Value> {}
 
-impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
+impl<Key: Hash + Eq, Value> TimedLfuMap<Key, Value> {
     /// Constructs an unbounded LFU cache with an time-to-live for its elements.
     /// Cache elements that have been in the cache longer than the provided
     /// duration are automatically evicted.
@@ -52,7 +52,7 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
     #[must_use]
     pub fn with_capacity_and_expiration(capacity: usize, expiration: Duration) -> Self {
         Self {
-            cache: LfuCache::with_capacity(capacity),
+            cache: LfuMap::with_capacity(capacity),
             expiration: Some(expiration),
             expiry_set: BTreeSet::new(),
         }
@@ -185,7 +185,7 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
 
     /// Clears the cache, returning the iterator of the previous cached values.
     #[inline]
-    pub fn clear(&mut self) -> LfuCacheIter<Key, Value> {
+    pub fn clear(&mut self) -> LfuMapIter<Key, Value> {
         self.expiry_set.clear();
         self.cache.clear()
     }
@@ -349,7 +349,7 @@ impl<Key: Hash + Eq> PartialOrd for ExpirationSetEntry<Key> {
     }
 }
 
-impl<Key: Hash + Eq, Value> Extend<(Key, Value)> for TimedLfuCache<Key, Value> {
+impl<Key: Hash + Eq, Value> Extend<(Key, Value)> for TimedLfuMap<Key, Value> {
     /// Inserts the items from the iterator into the cache. Note that this may
     /// evict items if the number of elements in the iterator plus the number of
     /// current items in the cache exceeds the capacity of the cache.
@@ -360,25 +360,25 @@ impl<Key: Hash + Eq, Value> Extend<(Key, Value)> for TimedLfuCache<Key, Value> {
     }
 }
 
-impl<Key: Hash + Eq, Value> IntoIterator for TimedLfuCache<Key, Value> {
+impl<Key: Hash + Eq, Value> IntoIterator for TimedLfuMap<Key, Value> {
     type Item = (Key, Value);
 
-    type IntoIter = LfuCacheIter<Key, Value>;
+    type IntoIter = LfuMapIter<Key, Value>;
 
     fn into_iter(self) -> Self::IntoIter {
-        LfuCacheIter(self.cache)
+        LfuMapIter(self.cache)
     }
 }
 
 #[cfg(test)]
 mod timed {
-    use crate::TimedLfuCache;
+    use crate::TimedLfuMap;
     use std::time::Duration;
 
     #[test]
     fn old_items_are_evicted() {
         let duration = Duration::from_millis(250);
-        let mut cache = TimedLfuCache::with_expiration(duration);
+        let mut cache = TimedLfuMap::with_expiration(duration);
         cache.insert(1, 2);
         assert_eq!(cache.get(&1), Some(&2));
         std::thread::sleep(duration * 2);
@@ -388,7 +388,7 @@ mod timed {
     #[test]
     fn non_expired_remains() {
         let duration = Duration::from_millis(250);
-        let mut cache = TimedLfuCache::with_expiration(duration);
+        let mut cache = TimedLfuMap::with_expiration(duration);
         cache.insert(1, 2);
         assert_eq!(cache.get(&1), Some(&2));
         std::thread::sleep(duration / 2);

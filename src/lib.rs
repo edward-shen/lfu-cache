@@ -19,7 +19,7 @@ mod iter;
 mod lfu;
 mod timed_lfu;
 
-pub use iter::LfuCacheIter;
+pub use iter::LfuMapIter;
 pub use lfu::entry::{Entry, OccupiedEntry, VacantEntry};
-pub use lfu::LfuCache;
-pub use timed_lfu::TimedLfuCache;
+pub use lfu::Map as LfuMap;
+pub use timed_lfu::TimedLfuMap;
