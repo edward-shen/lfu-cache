@@ -27,21 +27,15 @@ pub enum Entry<'a, Key: Hash + Eq, Value> {
 #[allow(clippy::module_name_repetitions)]
 pub struct OccupiedEntry<'a, Key: Hash + Eq, Value> {
     inner: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
-    freq_list: &'a mut FrequencyList<Key, Value>,
     len: &'a mut usize,
 }
 
 impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
     pub(super) fn new(
         entry: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
-        freq_list: &'a mut FrequencyList<Key, Value>,
         len: &'a mut usize,
     ) -> Self {
-        Self {
-            inner: entry,
-            freq_list,
-            len,
-        }
+        Self { inner: entry, len }
     }
 
     /// Gets a reference to the key in the entry.
@@ -56,7 +50,7 @@ impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
     pub fn remove_entry(self) -> (Rc<Key>, Value) {
         let (key, node) = self.inner.remove_entry();
         let node = *unsafe { Box::from_raw(node.as_ptr()) };
-        let value = remove_entry_pointer(node, self.freq_list, self.len);
+        let value = remove_entry_pointer(node, self.len);
         (key, value)
     }
 
@@ -102,7 +96,7 @@ impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
     pub fn remove(self) -> Value {
         let node = self.inner.remove();
         let node = *unsafe { Box::from_raw(node.as_ptr()) };
-        remove_entry_pointer(node, self.freq_list, self.len)
+        remove_entry_pointer(node, self.len)
     }
 }
 

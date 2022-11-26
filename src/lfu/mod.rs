@@ -263,11 +263,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         match self.lookup.0.entry(Rc::clone(&key)) {
             hash_map::Entry::Occupied(mut entry) => {
                 self.freq_list.update(*entry.get_mut());
-                Entry::Occupied(OccupiedEntry::new(
-                    entry,
-                    &mut self.freq_list,
-                    &mut self.len,
-                ))
+                Entry::Occupied(OccupiedEntry::new(entry, &mut self.len))
             }
             hash_map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry::new(
                 entry,
