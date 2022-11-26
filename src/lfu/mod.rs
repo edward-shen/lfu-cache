@@ -179,7 +179,10 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
     /// value, if it exists.
     #[inline]
     pub fn get(&mut self, key: &Key) -> Option<&Value> {
-        self.get_rc_key_value(key).map(|(_, v)| v)
+        let entry = self.lookup.0.get_mut(key)?;
+        self.freq_list.update(*entry);
+        // SAFETY: This is fine because self is uniquely borrowed
+        Some(&unsafe { entry.as_ref() }.value)
     }
 
     /// Like [`Self::get`], but also returns the Rc as well.
