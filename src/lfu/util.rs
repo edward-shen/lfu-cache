@@ -11,7 +11,7 @@ where
     Key: Hash + Eq,
 {
     let owner = unsafe { node.owner.as_mut() };
-    drop(LfuEntry::detach(NonNull::from(&mut node)));
+    drop(LfuEntry::detach_owned(NonNull::from(&mut node)));
     if owner.elements.is_none() {
         Node::detach(unsafe { *Box::from_raw(owner) });
 

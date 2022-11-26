@@ -88,7 +88,7 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
         let node_ptr = self.elements?;
         // let elements = unsafe { Box::from_raw(node_ptr.as_ptr()) };
         self.elements = unsafe { node_ptr.as_ref() }.next;
-        let detached = LfuEntry::detach(node_ptr);
+        let detached = LfuEntry::detach_owned(node_ptr);
         Some(WithFrequency(self.frequency, detached))
     }
 
@@ -98,7 +98,7 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
             self.elements = unsafe { head.as_ref() }.next;
         }
 
-        LfuEntry::detach(entry)
+        LfuEntry::detach_owned(entry)
     }
 
     pub(super) fn remove_ref(&mut self, entry: NonNull<LfuEntry<Key, T>>) -> DetachedRef<Key, T> {
@@ -107,7 +107,7 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
             self.elements = unsafe { head.as_ref() }.next;
         }
 
-        LfuEntry::detach_as_ref(entry)
+        LfuEntry::detach(entry)
     }
 
     pub(super) fn detach(mut self) {

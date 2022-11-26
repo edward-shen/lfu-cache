@@ -35,12 +35,12 @@ impl<Key: Hash + Eq, Value> LfuEntry<Key, Value> {
     /// it and deallocating its memory address.
     ///
     /// This function should only be used when fully removing the item from the
-    /// cache. [`detach_as_ref`] should be used instead if it will be
+    /// cache. [`detach`] should be used instead if it will be
     /// re-attached into the data structure.
     ///
-    /// [`detach_as_ref`]: Self::detach_as_ref
-    pub(super) fn detach(node: NonNull<Self>) -> Detached<Key, Value> {
-        std::mem::forget(Self::detach_as_ref(node));
+    /// [`detach`]: Self::detach
+    pub(super) fn detach_owned(node: NonNull<Self>) -> Detached<Key, Value> {
+        std::mem::forget(Self::detach(node));
         let detached = unsafe { Box::from_raw(node.as_ptr()) };
         Detached {
             key: detached.key,
@@ -54,7 +54,7 @@ impl<Key: Hash + Eq, Value> LfuEntry<Key, Value> {
     /// This is useful to avoid deallocating memory and immediately
     /// reallocating, such as in the common operation of moving a [`LfuEntry`]
     /// to the next frequency node.
-    pub(super) fn detach_as_ref(mut node: NonNull<Self>) -> DetachedRef<Key, Value> {
+    pub(super) fn detach(mut node: NonNull<Self>) -> DetachedRef<Key, Value> {
         // There are five links to fix:
         // ┌──────┐ (1) ┌─────┐ (2) ┌──────┐
         // │      ├────►│     ├────►│      │
@@ -93,6 +93,21 @@ impl<Key: Hash + Eq, Value> LfuEntry<Key, Value> {
     }
 }
 
+/// Wrapper newtype pattern representing a temporarily detached [`LfuEntry`].
+///
+/// A detached LFU entry is guaranteed to not be internally pointing to
+/// anything. Obtaining a detached LFU entry is also guaranteed to fix any
+/// neighbors that might be pointing to it.
+///
+/// Unlike [`Detached`], this does not deallocate the memory associated with
+/// the [`LfuEntry`]. Instead, this is an optimization for reusing the detached
+/// [`LfuEntry`] at some point after.
+///
+/// # Panics
+///
+/// Because this is intended as an optimization, not re-attaching the detached
+/// value will likely lead to a memory leak. As a result, this intentionally
+/// panics to avoid this scenario.
 #[must_use]
 pub struct DetachedRef<Key: Hash + Eq, Value>(NonNull<LfuEntry<Key, Value>>);
 
