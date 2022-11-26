@@ -24,7 +24,7 @@ mod lfu_entry;
 mod node;
 mod util;
 
-/// A collection that, if limited to a certain capacity, will evict based on the
+/// A collection that if limited to a certain capacity will evict based on the
 /// least recently used value.
 // Note that Default is _not_ implemented. This is intentional, as most people
 // likely don't want an unbounded LFU cache by default.
@@ -66,10 +66,11 @@ impl<Key: Hash + Eq, Value> Drop for LookupMap<Key, Value> {
 }
 
 impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
-    /// Creates a LFU cache with a capacity bound. When the capacity is reached,
-    /// then the least frequently used item is evicted. If there are multiple
-    /// least frequently used items in this collection, the most recently
-    /// provided item is evicted.
+    /// Creates a LFU cache with at least the specified capacity.
+    ///
+    /// When the capacity is reached, then the least frequently used item is
+    /// evicted. If there are multiple least frequently used items in this
+    /// collection, the most recently added item is evicted.
     ///
     /// ```
     /// # use lfu_cache::LfuCache;
@@ -101,27 +102,38 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         }
     }
 
-    /// Creates a LFU cache with no bound. This turns the LFU cache into a very
-    /// expensive [`HashMap`] if the least frequently used item is never
-    /// removed. This is useful if you want to have fine-grain control over when
-    /// the LFU cache should evict. If a LFU cache was constructed using this
-    /// function, users should call [`Self::pop_lfu`] to remove the least
-    /// frequently used item.
+    /// Creates a LFU cache with no bound.
+    ///
+    /// This effectively turns the LFU cache into a very expensive [`HashMap`]
+    /// if the least frequently used item is never removed. This is useful if
+    /// you want to have fine-grain control over when the LFU cache should
+    /// evict. If a LFU cache was constructed using this function, users should
+    /// call [`pop_lfu`] to remove the least frequently used item.
     ///
     /// Construction of this cache will not heap allocate.
+    ///
+    /// [`pop_lfu`]: Self::pop_lfu
     #[inline]
     #[must_use]
     pub fn unbounded() -> Self {
         Self::with_capacity(0)
     }
 
-    /// Sets the new capacity. If the provided capacity is zero, then this
-    /// will turn the cache into an unbounded cache. If the new capacity is less
-    /// than the current capacity, the least frequently used items are evicted
-    /// until the number of items is equal to the capacity.
+    /// Sets the new capacity.
+    ///
+    /// If the provided capacity is zero, then this will turn the cache into an
+    /// unbounded cache. If the new capacity is less than the current capacity,
+    /// the least frequently used items are evicted until the number of items is
+    /// equal to the capacity.
     ///
     /// If the cache becomes unbounded, then users must manually call
-    /// [`Self::pop_lfu`] to remove the least frequently used item.
+    /// [`pop_lfu`] to remove the least frequently used item.
+    ///
+    /// If the cache was previously unbounded and is provided a non-zero
+    /// capacity, then the cache now is bounded and will automatically remove
+    /// the least frequently used item when the capacity is reached.
+    ///
+    /// [`pop_lfu`]: Self::pop_lfu
     pub fn set_capacity(&mut self, new_capacity: usize) {
         self.capacity = NonZeroUsize::new(new_capacity);
 
@@ -132,13 +144,17 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         }
     }
 
-    /// Inserts a value into the cache using the provided key. If the value
-    /// already exists, then the value is replaced with the provided value and
-    /// the frequency is reset.
+    /// Inserts a key-value pair into the cache.
     ///
-    /// The returned Option will contain an evicted value, if a value needed to
-    /// be evicted. This includes the old value, if the previously existing
-    /// value was present under the same key.
+    /// If the key already exists, the value is updated without updating the
+    /// key and the previous value is returned. The frequency of this item is
+    /// reset.
+    ///
+    /// If the key did not already exist, then what is returned depends on the
+    /// capacity of the cache. If an entry was evicted, the old value is
+    /// returned. If the cache did not need to evict an entry or was unbounded,
+    /// this returns [None].
+    // TODO: return a (Key, Value, Freq)
     #[inline]
     pub fn insert(&mut self, key: Key, value: Value) -> Option<Value> {
         self.insert_rc(Rc::new(key), value)
@@ -175,7 +191,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         evicted
     }
 
-    /// Gets a value and incrementing the internal frequency counter of that
+    /// Gets a value and increments the internal frequency counter of that
     /// value, if it exists.
     #[inline]
     pub fn get(&mut self, key: &Key) -> Option<&Value> {
@@ -194,7 +210,7 @@ impl<Key: Hash + Eq, Value> LfuCache<Key, Value> {
         Some((Rc::clone(&entry.key), &entry.value))
     }
 
-    /// Gets a mutable value and incrementing the internal frequency counter of
+    /// Gets a mutable value and increments the internal frequency counter of
     /// that value, if it exists.
     #[inline]
     pub fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
