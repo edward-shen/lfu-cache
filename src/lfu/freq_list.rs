@@ -7,8 +7,56 @@ use super::lfu_entry::Detached;
 use super::node::WithFrequency;
 use super::{LfuEntry, Node};
 
-#[derive(Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+/// Represents the internal data structure to determine frequencies of some
+/// items.
+///
+/// An frequency list is a doubly-linked list consisting of [`Node`]s pointing
+/// to a doubly linked list of [`LfuEntry`]s. Each [`LfuEntry`] has an
+/// associated key-value pair, and knows the node it's rooted under. Each
+/// [`Node`] knows its frequency, as well as the first element into the
+/// doubly-linked list.
+///
+/// The doubly-linked [`LfuEntry`]s allow for constant time removal. The
+/// [`Node`] having a reference to the [`LfuEntry`]s allow for constant time
+/// insertion and easy access when popping off an LFU entry. All [`LfuEntry`]s
+/// know its [`Node`] owner to quickly allow for removal and re-insertion into
+/// the next node.
+///
+/// For example, the following is a representation of a frequency list with
+/// two items accessed once, one item access 3 times, and three items accessed
+/// four times:
+///
+/// ```text
+/// ┌────┐           ┌────┐           ┌────┐
+/// │Node◄───────────┤Node◄───────────┤Node│
+/// │(1) │           │(3) │           │(4) │
+/// │    ├─┬─────────►    ├─┬─────────►    ├─┐
+/// └─▲──┘ │         └─▲──┘ │         └─▲──┘ │
+///   │    │           │    │           │    │
+///   │    │           │    │           │    │
+///   │  ┌─▼──────┐    │  ┌─▼──────┐    │  ┌─▼──────┐
+///   ├──┤LfuEntry│    └──┤LfuEntry│    ├──┤LfuEntry│
+///   │  │(K, V)  │       │(K, V)  │    │  │(K, V)  │
+///   │  └─┬────▲─┘       └────────┘    │  └─┬────▲─┘
+///   │    │    │                       │    │    │
+///   │    │    │                       │    │    │
+///   │  ┌─▼────┴─┐                     │  ┌─▼────┴─┐
+///   └──┤LfuEntry│                     ├──┤LfuEntry│
+///      │(K, V)  │                     │  │(K, V)  │
+///      └────────┘                     │  └─┬────▲─┘
+///                                     │    │    │
+///                                     │    │    │
+///                                     │  ┌─▼────┴─┐
+///                                     └──┤LfuEntry│
+///                                        │(K, V)  │
+///                                        └────────┘
+/// ```
+///
+/// It currently is illegal for a [`Node`] to exist but have no child elements.
+#[derive(Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(super) struct FrequencyList<Key: Hash + Eq, T> {
+    /// The first node in the frequency list which may or may not exist. This
+    /// item is heap allocated.
     pub(super) head: Option<NonNull<Node<Key, T>>>,
 }
 
@@ -72,10 +120,18 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         Self { head: None }
     }
 
-    /// Inserts an item into the frequency list, returning a pointer to the
-    /// item. Callers must make sure to free the returning pointer, usually via
-    /// `Box::from_raw(foo.as_ptr())`.
+    /// Inserts an item into the frequency list returning a pointer to the
+    /// item.
+    ///
+    /// Since this is a newly inserted item, it will always have an access count
+    /// of zero.
+    ///
+    /// # Memory ownership
+    ///
+    /// It is the caller's responsibility to free the returning pointer, usually
+    /// via `Box::from_raw(foo.as_ptr())`.
     pub(super) fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<LfuEntry<Key, T>> {
+        // Gets or creates a node with a frequency of zero.
         let head = match self.head {
             Some(head) if unsafe { head.as_ref() }.frequency == 0 => head,
             _ => self.init_front(),
@@ -84,6 +140,14 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         Node::push(head, Detached::new(key, value))
     }
 
+    /// Creates a new node at the beginning of the frequency list with an access
+    /// count of zero.
+    ///
+    /// # Memory ownership
+    ///
+    /// The returned pointer does not need to be freed. This method internally
+    /// updates the head of the list to be the pointer, which will free the
+    /// pointer on drop.
     fn init_front(&mut self) -> NonNull<Node<Key, T>> {
         let node = Box::new(Node {
             next: self.head,
@@ -111,6 +175,14 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         node
     }
 
+    /// Updates the "frequency" of the entry.
+    ///
+    /// This in practice, gets or creates a [`Node`] with frequency + 1 of the
+    /// entry. It then detaches itself from it's owning [`Node`], and reattaches
+    /// itself to the frequency + 1 [`Node`].
+    ///
+    /// If the old [`Node`] no longer has any entries, the [`Node`] is removed.
+    // TODO: Brand LfuEntry?
     pub(super) fn update(&mut self, mut entry: NonNull<LfuEntry<Key, T>>) {
         // Generate the next frequency list node if it doesn't exist or isn't
         // n + 1 of the current node's frequency.
@@ -142,6 +214,12 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         }
     }
 
+    /// Removes the first entry of the head element if the element exists.
+    ///
+    /// Since the first entry of the head element is the most recently added
+    /// item, popping elements of the same frequency is Last In, First Out. In
+    /// other words, the lowest frequency items are selected, and of those
+    /// items, they are popped like a stack.
     #[inline]
     pub(super) fn pop_lfu(&mut self) -> Option<WithFrequency<Detached<Key, T>>> {
         let mut head_node_ptr = self.head?;
@@ -158,11 +236,14 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         item
     }
 
+    /// Returns the most recently added, lowest frequently accessed item if it
+    /// exists.
     #[inline]
     pub(super) fn peek_lfu(&self) -> Option<&T> {
         self.head.and_then(|node| unsafe { node.as_ref() }.peek())
     }
 
+    /// Returns a vec of all frequencies in the list.
     pub(super) fn frequencies(&self) -> Vec<usize> {
         let mut freqs = vec![];
         let mut cur_head = self.head;
@@ -175,6 +256,8 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         freqs
     }
 
+    /// Iterates through the frequency list, returning the number of [`Node`]s
+    /// in the list.
     #[cfg(test)]
     pub fn len(&self) -> usize {
         let mut count = 0;
