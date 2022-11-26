@@ -1,15 +1,14 @@
 use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
 
-use super::lfu_entry::{Detached, DetachedRef};
-use super::LfuEntry;
+use crate::lfu::{Detached, DetachedRef, Entry};
 
 #[derive(Default, Eq, Ord, PartialOrd, Debug)]
-pub(super) struct Node<Key: Hash + Eq, T> {
-    pub(super) next: Option<NonNull<Self>>,
-    pub(super) prev: Option<NonNull<Self>>,
-    pub(super) elements: Option<NonNull<LfuEntry<Key, T>>>,
-    pub(super) frequency: usize,
+pub(crate) struct Node<Key: Hash + Eq, T> {
+    pub(crate) next: Option<NonNull<Self>>,
+    pub(crate) prev: Option<NonNull<Self>>,
+    pub(crate) elements: Option<NonNull<Entry<Key, T>>>,
+    pub(crate) frequency: usize,
 }
 
 impl<Key: Hash + Eq, T> PartialEq for Node<Key, T> {
@@ -38,7 +37,7 @@ impl<Key: Hash + Eq, T> Drop for Node<Key, T> {
 }
 
 impl<Key: Hash + Eq, T> Node<Key, T> {
-    pub(super) fn create_increment(mut node: NonNull<Self>) -> NonNull<Self> {
+    pub(crate) fn create_increment(mut node: NonNull<Self>) -> NonNull<Self> {
         // There are four links to fix:
         // ┌─────┐ (1) ┌─────┐ (2) ┌──────┐
         // │     ├────►│     ├────►│      │
@@ -70,47 +69,44 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
     }
 
     /// Pushes the entry to the front of the list
-    pub(super) fn push(
-        mut node: NonNull<Self>,
-        entry: Detached<Key, T>,
-    ) -> NonNull<LfuEntry<Key, T>> {
+    pub(crate) fn push(mut node: NonNull<Self>, entry: Detached<Key, T>) -> NonNull<Entry<Key, T>> {
         let attached = entry.attach(None, unsafe { node.as_mut() }.elements, node);
         unsafe { node.as_mut() }.elements = Some(attached);
         attached
     }
 
-    pub(super) fn push_ref(mut node: NonNull<Self>, entry: DetachedRef<Key, T>) {
+    pub(crate) fn push_ref(mut node: NonNull<Self>, entry: DetachedRef<Key, T>) {
         let attached = entry.attach_ref(None, unsafe { node.as_mut() }.elements, node);
         unsafe { node.as_mut() }.elements = Some(attached);
     }
 
-    pub(super) fn pop(&mut self) -> Option<WithFrequency<Detached<Key, T>>> {
+    pub(crate) fn pop(&mut self) -> Option<WithFrequency<Detached<Key, T>>> {
         let node_ptr = self.elements?;
         // let elements = unsafe { Box::from_raw(node_ptr.as_ptr()) };
         self.elements = unsafe { node_ptr.as_ref() }.next;
-        let detached = LfuEntry::detach_owned(node_ptr);
+        let detached = Entry::detach_owned(node_ptr);
         Some(WithFrequency(self.frequency, detached))
     }
 
-    pub(super) fn remove(&mut self, entry: NonNull<LfuEntry<Key, T>>) -> Detached<Key, T> {
+    pub(crate) fn remove(&mut self, entry: NonNull<Entry<Key, T>>) -> Detached<Key, T> {
         let head = self.elements.unwrap();
         if head == entry {
             self.elements = unsafe { head.as_ref() }.next;
         }
 
-        LfuEntry::detach_owned(entry)
+        Entry::detach_owned(entry)
     }
 
-    pub(super) fn remove_ref(&mut self, entry: NonNull<LfuEntry<Key, T>>) -> DetachedRef<Key, T> {
+    pub(crate) fn remove_ref(&mut self, entry: NonNull<Entry<Key, T>>) -> DetachedRef<Key, T> {
         let head = self.elements.unwrap();
         if head == entry {
             self.elements = unsafe { head.as_ref() }.next;
         }
 
-        LfuEntry::detach(entry)
+        Entry::detach(entry)
     }
 
-    pub(super) fn detach(mut self) {
+    pub(crate) fn detach(mut self) {
         assert!(self.elements.is_none());
         // There are four links to fix:
         // ┌──────┐ (1) ┌─────┐ (2) ┌──────┐
@@ -131,11 +127,11 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
         self.prev = None;
     }
 
-    pub(super) fn peek(&self) -> Option<&T> {
+    pub(crate) fn peek(&self) -> Option<&T> {
         Some(&unsafe { self.elements?.as_ref() }.value)
     }
 
-    pub(super) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         let mut count = 0;
         let mut head = self.elements;
         while let Some(cur_node) = head {
@@ -148,13 +144,13 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
 }
 
 #[derive(Default, PartialEq, Eq, Ord, PartialOrd, Debug)]
-pub(super) struct WithFrequency<T>(pub usize, pub T);
+pub(crate) struct WithFrequency<T>(pub usize, pub T);
 
 #[cfg(test)]
 mod node {
     use super::Node;
-    use crate::lfu::lfu_entry::Detached;
-    use crate::lfu::node::WithFrequency;
+    use crate::frequency_list::WithFrequency;
+    use crate::lfu::Detached;
     use std::hash::Hash;
     use std::ops::{Deref, DerefMut};
     use std::ptr::NonNull;

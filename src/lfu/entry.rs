@@ -1,352 +1,96 @@
-use std::collections::hash_map::{
-    OccupiedEntry as InnerOccupiedEntry, VacantEntry as InnerVacantEntry,
-};
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
-use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use super::util::remove_entry_pointer;
-use super::{FrequencyList, LfuEntry};
+use crate::frequency_list::Node;
 
-/// A view into a single entry in the LFU cache, which may either be vacant or
-/// occupied.
-///
-/// This `enum` is constructed from the `entry` function on any of the LFU
-/// caches.
-pub enum Entry<'a, Key: Hash + Eq, Value> {
-    /// An occupied entry.
-    Occupied(OccupiedEntry<'a, Key, Value>),
-    /// A vacant entry.
-    Vacant(VacantEntry<'a, Key, Value>),
+use super::{Detached, DetachedRef};
+
+#[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub(crate) struct Entry<Key: Hash + Eq, Value> {
+    // We still need to keep a linked list implementation for O(1)
+    // in-the-middle removal.
+    pub(crate) next: Option<NonNull<Self>>,
+    pub(crate) prev: Option<NonNull<Self>>,
+    /// Instead of traversing up to the frequency node, we just keep a reference
+    /// to the owning node. This ensures that entry movement is an O(1)
+    /// operation.
+    pub(crate) owner: NonNull<Node<Key, Value>>,
+    /// We need to maintain a pointer to the key as we need to remove the
+    /// lookup table entry on lru popping, and we need the key to properly fetch
+    /// the correct entry (the hash itself is not guaranteed to return the
+    /// correct entry).
+    pub(crate) key: Rc<Key>,
+    pub(crate) value: Value,
 }
 
-/// A view into an occupied entry in a LFU cache. It is part of the [`Entry`]
-/// enum.
-// This structure is re-exported at the root, so it's okay to be repetitive.
-#[allow(clippy::module_name_repetitions)]
-pub struct OccupiedEntry<'a, Key: Hash + Eq, Value> {
-    inner: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
-    len: &'a mut usize,
+#[cfg(not(tarpaulin_include))]
+impl<Key: Hash + Eq, Value: Display> Display for Entry<Key, Value> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
 }
 
-impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
-    pub(super) fn new(
-        entry: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
-        len: &'a mut usize,
-    ) -> Self {
-        Self { inner: entry, len }
-    }
-
-    /// Gets a reference to the key in the entry.
-    #[inline]
-    #[must_use]
-    pub fn key(&self) -> &Key {
-        self.inner.key()
-    }
-
-    /// Take the ownership of the key and value from the map.
-    #[must_use]
-    pub fn remove_entry(self) -> (Rc<Key>, Value) {
-        let (key, node) = self.inner.remove_entry();
-        let node = *unsafe { Box::from_raw(node.as_ptr()) };
-        let value = remove_entry_pointer(node, self.len);
-        (key, value)
-    }
-
-    /// Gets a reference to the value in the entry.
-    #[inline]
-    #[must_use]
-    pub fn get(&self) -> &Value {
-        &unsafe { self.inner.get().as_ref() }.value
-    }
-
-    /// Gets a mutable reference to the value in the entry.
+impl<Key: Hash + Eq, Value> Entry<Key, Value> {
+    /// Fully detaches a [`LfuEntry`] entry, removing all references to and from
+    /// it and deallocating its memory address.
     ///
-    /// If you need a reference to the `OccupiedEntry` which may outlive the
-    /// destruction of the Entry value, see [`Self::into_mut`].
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut Value {
-        &mut unsafe { self.inner.get_mut().as_mut() }.value
-    }
-
-    /// Converts the `OccupiedEntry` into a mutable reference to the value in
-    /// the entry with a lifetime bound to the map itself.
+    /// This function should only be used when fully removing the item from the
+    /// cache. [`detach`] should be used instead if it will be
+    /// re-attached into the data structure.
     ///
-    /// If you need multiple references to the `OccupiedEntry`, see
-    /// [`Self::get_mut`].
-    #[inline]
-    #[must_use]
-    pub fn into_mut(self) -> &'a mut Value {
-        &mut unsafe { self.inner.into_mut().as_mut() }.value
-    }
-
-    /// Sets the value of the entry, and returns the entry's old value. Note
-    /// that the semantics for this method is closer to swapping the values
-    /// rather than inserting a new value into the LFU cache. As a result, this
-    /// does not reset the frequency of the key.
-    pub fn insert(&mut self, mut value: Value) -> Value {
-        let old_value = &mut unsafe { self.inner.get_mut().as_mut() }.value;
-        std::mem::swap(old_value, &mut value);
-        value
-    }
-
-    /// Takes the value out of the entry, and returns it.
-    #[must_use]
-    pub fn remove(self) -> Value {
-        let node = self.inner.remove();
-        let node = *unsafe { Box::from_raw(node.as_ptr()) };
-        remove_entry_pointer(node, self.len)
-    }
-}
-
-/// A view into a vacant entry in a LFU cache. It is part of the [`Entry`] enum.
-// This structure is re-exported at the root, so it's okay to be repetitive.
-#[allow(clippy::module_name_repetitions)]
-pub struct VacantEntry<'a, Key: Hash + Eq, Value> {
-    inner: InnerVacantEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
-    key: Rc<Key>,
-    freq_list: &'a mut FrequencyList<Key, Value>,
-    cache_capacity: Option<NonZeroUsize>,
-    cache_len: &'a mut usize,
-}
-
-impl<'a, Key: Hash + Eq, Value> VacantEntry<'a, Key, Value> {
-    pub(super) fn new(
-        entry: InnerVacantEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
-        key: Rc<Key>,
-        freq_list: &'a mut FrequencyList<Key, Value>,
-        cache_capacity: Option<NonZeroUsize>,
-        cache_len: &'a mut usize,
-    ) -> Self {
-        Self {
-            inner: entry,
-            key,
-            freq_list,
-            cache_capacity,
-            cache_len,
+    /// [`detach`]: Self::detach
+    pub(crate) fn detach_owned(node: NonNull<Self>) -> Detached<Key, Value> {
+        std::mem::forget(Self::detach(node));
+        let detached = unsafe { Box::from_raw(node.as_ptr()) };
+        Detached {
+            key: detached.key,
+            value: detached.value,
         }
     }
 
-    /// Gets a reference to the key that would be used when inserting a value
-    /// through the [`VacantEntry`].
-    #[inline]
-    #[must_use]
-    pub fn key(&self) -> &Key {
-        self.key.as_ref()
-    }
-
-    /// Gets a [`Rc`] to the key that would be used when inserting a value
-    /// through the [`VacantEntry`].
-    #[inline]
-    #[must_use]
-    pub fn key_rc(&self) -> Rc<Key> {
-        Rc::clone(&self.key)
-    }
-
-    /// Take ownership of the key.
-    #[inline]
-    #[must_use]
-    // False positive, const can't evaluate self dropping.
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn into_key(self) -> Rc<Key> {
-        self.key
-    }
-
-    /// Sets the value of the entry with the [`VacantEntry`]'s key, and returns
-    /// a mutable reference to it.
-    #[inline]
-    pub fn insert(self, value: Value) -> &'a mut Value {
-        if let Some(capacity) = self.cache_capacity {
-            if capacity.get() == *self.cache_len {
-                self.freq_list.pop_lfu();
-            }
-        } else {
-            *self.cache_len += 1;
-        }
-
-        &mut unsafe {
-            self.inner
-                .insert(self.freq_list.insert(self.key, value))
-                .as_mut()
-        }
-        .value
-    }
-}
-
-impl<'a, Key: Hash + Eq, Value> Entry<'a, Key, Value> {
-    /// Ensures a value is in the entry by inserting the default if empty, and
-    /// returns a mutable reference to the value in the entry.
-    #[inline]
-    pub fn or_insert(self, default: Value) -> &'a mut Value {
-        match self {
-            Entry::Occupied(entry) => &mut unsafe { entry.inner.into_mut().as_mut() }.value,
-            Entry::Vacant(entry) => entry.insert(default),
-        }
-    }
-
-    /// Ensures a value is in the entry by inserting the result of the default
-    /// function if empty, and returns a mutable reference to the value in the
-    /// entry.
-    #[inline]
-    pub fn or_insert_with<F>(self, default: F) -> &'a mut Value
-    where
-        F: FnOnce() -> Value,
-    {
-        match self {
-            Entry::Occupied(entry) => &mut unsafe { entry.inner.into_mut().as_mut() }.value,
-            Entry::Vacant(entry) => entry.insert(default()),
-        }
-    }
-
-    /// Ensures a value is in the entry by inserting, if empty, the result of
-    /// the default function. This method allows for generating key-derived
-    /// values for insertion by providing the default function a reference to
-    /// the key that was moved during the `.entry(key)` method call.
+    /// Removes all references to and from the provided [`LfuEntry`], without
+    /// actually deallocating the memory.
     ///
-    /// The reference to the moved key is provided so that cloning or copying
-    /// the key is unnecessary, unlike with `.or_insert_with(|| ... )`.
-    #[inline]
-    pub fn or_insert_with_key<F>(self, default: F) -> &'a mut Value
-    where
-        F: FnOnce(&Key) -> Value,
-    {
-        match self {
-            Entry::Occupied(entry) => &mut unsafe { entry.inner.into_mut().as_mut() }.value,
-            Entry::Vacant(entry) => {
-                let value = default(&entry.key);
-                entry.insert(value)
-            }
+    /// This is useful to avoid deallocating memory and immediately
+    /// reallocating, such as in the common operation of moving a [`LfuEntry`]
+    /// to the next frequency node.
+    pub(crate) fn detach(mut node: NonNull<Self>) -> DetachedRef<Key, Value> {
+        // There are five links to fix:
+        // ┌──────┐ (1) ┌─────┐ (2) ┌──────┐
+        // │      ├────►│     ├────►│      │
+        // │ prev │     │ cur │     │ next │
+        // │      │◄────┤     │◄────┤      │
+        // └──────┘ (3) └──┬──┘ (4) └──────┘
+        //                 │
+        //                 │       ┌───────┐
+        //                 │  (5)  │       │
+        //                 └──────►│ owner │
+        //                         │       │
+        //                         └───────┘
+
+        let node_ref = unsafe { node.as_mut() };
+        if let Some(mut prev) = node_ref.prev {
+            // Fix (1)
+            unsafe { prev.as_mut().next = node_ref.next };
         }
-    }
 
-    /// Returns a reference to this entry's key.
-    #[inline]
-    #[must_use]
-    pub fn key(&self) -> &Key {
-        match self {
-            Entry::Occupied(entry) => entry.inner.key(),
-            Entry::Vacant(entry) => entry.key.as_ref(),
+        if let Some(mut next) = node_ref.next {
+            // Fix (4)
+            unsafe { next.as_mut().prev = node_ref.prev };
         }
-    }
 
-    /// Returns the `Rc` to this entry's key.
-    #[inline]
-    #[must_use]
-    pub fn key_rc(&self) -> Rc<Key> {
-        match self {
-            Entry::Occupied(entry) => Rc::clone(entry.inner.key()),
-            Entry::Vacant(entry) => Rc::clone(&entry.key),
-        }
-    }
+        // These are probably not needed but are probably a good idea to do
+        // anyways to have a simpler model to work with.
 
-    /// Provides in-place mutable access to an occupied entry before any
-    /// potential inserts into the map.
-    #[inline]
-    #[must_use]
-    pub fn and_modify<F>(self, f: F) -> Self
-    where
-        F: FnOnce(&mut Value),
-    {
-        match self {
-            Self::Occupied(mut entry) => {
-                f(&mut unsafe { entry.inner.get_mut().as_mut() }.value);
-                Self::Occupied(entry)
-            }
-            Self::Vacant(entry) => Self::Vacant(entry),
-        }
-    }
-}
+        // Fix (2)
+        node_ref.next = None;
+        // Fix (3)
+        node_ref.prev = None;
+        // Fix (5)
+        node_ref.owner = NonNull::dangling();
 
-impl<'a, Key: Hash + Eq, Value: Default> Entry<'a, Key, Value> {
-    /// Ensures a value is in the entry by inserting the default value if empty,
-    /// and returns a mutable reference to the value in the entry.
-    #[inline]
-    #[must_use]
-    pub fn or_default(self) -> &'a mut Value {
-        match self {
-            Self::Occupied(entry) => &mut unsafe { entry.inner.into_mut().as_mut() }.value,
-            Self::Vacant(entry) => entry.insert(Value::default()),
-        }
-    }
-}
-
-#[cfg(test)]
-mod entry {
-    use crate::LfuMap;
-
-    fn init_cache() -> LfuMap<i32, i32> {
-        LfuMap::unbounded()
-    }
-
-    #[test]
-    fn or_insert_empty_adds_value() {
-        let mut cache = init_cache();
-        let entry = cache.entry(1);
-
-        // test entry value is expected
-        let v = entry.or_insert(2);
-        assert_eq!(*v, 2);
-
-        // test cache has been updated correctly
-        assert_eq!(cache.keys().copied().collect::<Vec<_>>(), vec![1]);
-        assert_eq!(cache.frequencies(), vec![0]);
-        assert_eq!(cache.get(&1), Some(&2));
-        assert_eq!(cache.len(), 1);
-    }
-
-    #[test]
-    fn or_insert_non_empty_does_nothing() {
-        let mut cache = init_cache();
-        cache.insert(1, 2);
-        let entry = cache.entry(1);
-
-        // test entry value is expected
-        let v = entry.or_insert(3);
-        assert_eq!(*v, 2);
-
-        // test cache has been updated correctly
-        assert_eq!(cache.keys().copied().collect::<Vec<_>>(), vec![1]);
-        assert_eq!(cache.frequencies(), vec![1]);
-        assert_eq!(cache.get(&1), Some(&2));
-        assert_eq!(cache.len(), 1);
-    }
-
-    #[test]
-    fn or_insert_with_is_equiv_to_or_insert() {
-        // empty cache
-        let mut cache_0 = init_cache();
-        let res_0 = cache_0.entry(1).or_insert(2);
-        let mut cache_1 = init_cache();
-        let res_1 = cache_1.entry(1).or_insert_with(|| 2);
-        assert_eq!(res_0, res_1);
-
-        // non-empty cache
-        let mut cache_0 = init_cache();
-        cache_0.insert(1, 3);
-        let res_0 = cache_0.entry(1).or_insert(2);
-        let mut cache_1 = init_cache();
-        cache_1.insert(1, 3);
-        let res_1 = cache_1.entry(1).or_insert_with(|| 2);
-        assert_eq!(res_0, res_1);
-    }
-
-    #[test]
-    fn or_insert_with_key_is_equiv_to_or_insert() {
-        // empty cache
-        let mut cache_0 = init_cache();
-        let res_0 = cache_0.entry(1).or_insert(2);
-        let mut cache_1 = init_cache();
-        let res_1 = cache_1.entry(1).or_insert_with_key(|_| 2);
-        assert_eq!(res_0, res_1);
-
-        // non-empty cache
-        let mut cache_0 = init_cache();
-        cache_0.insert(1, 3);
-        let res_0 = cache_0.entry(1).or_insert(2);
-        let mut cache_1 = init_cache();
-        cache_1.insert(1, 3);
-        let res_1 = cache_1.entry(1).or_insert_with_key(|_| 2);
-        assert_eq!(res_0, res_1);
+        DetachedRef::new(node)
     }
 }

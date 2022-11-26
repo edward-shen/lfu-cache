@@ -4,22 +4,22 @@ use std::iter::FusedIterator;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use super::lfu_entry::Detached;
-use super::node::WithFrequency;
-use super::{LfuEntry, Node};
+use crate::lfu::{Detached, Entry};
+
+use super::node::{Node, WithFrequency};
 
 /// Represents the internal data structure to determine frequencies of some
 /// items.
 ///
 /// An frequency list is a doubly-linked list consisting of [`Node`]s pointing
-/// to a doubly linked list of [`LfuEntry`]s. Each [`LfuEntry`] has an
+/// to a doubly linked list of [`Entry`]s. Each [`Entry`] has an
 /// associated key-value pair, and knows the node it's rooted under. Each
 /// [`Node`] knows its frequency, as well as the first element into the
 /// doubly-linked list.
 ///
-/// The doubly-linked [`LfuEntry`]s allow for constant time removal. The
-/// [`Node`] having a reference to the [`LfuEntry`]s allow for constant time
-/// insertion and easy access when popping off an LFU entry. All [`LfuEntry`]s
+/// The doubly-linked [`Entry`]s allow for constant time removal. The
+/// [`Node`] having a reference to the [`Entry`]s allow for constant time
+/// insertion and easy access when popping off an LFU entry. All [`Entry`]s
 /// know its [`Node`] owner to quickly allow for removal and re-insertion into
 /// the next node.
 ///
@@ -55,10 +55,10 @@ use super::{LfuEntry, Node};
 ///
 /// It currently is illegal for a [`Node`] to exist but have no child elements.
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(super) struct FrequencyList<Key: Hash + Eq, T> {
+pub struct FrequencyList<Key: Hash + Eq, T> {
     /// The first node in the frequency list which may or may not exist. This
     /// item is heap allocated.
-    pub(super) head: Option<NonNull<Node<Key, T>>>,
+    pub(crate) head: Option<NonNull<Node<Key, T>>>,
 }
 
 impl<Key: Hash + Eq, Value> Default for FrequencyList<Key, Value> {
@@ -117,7 +117,7 @@ impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
 
 impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     #[inline]
-    pub(super) const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self { head: None }
     }
 
@@ -131,7 +131,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     ///
     /// It is the caller's responsibility to free the returning pointer, usually
     /// via `Box::from_raw(foo.as_ptr())`.
-    pub(super) fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<LfuEntry<Key, T>> {
+    pub(crate) fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<Entry<Key, T>> {
         // Gets or creates a node with a frequency of zero.
         // Lint false positive; the match guard is unaccounted for.
         #[allow(clippy::option_if_let_else)]
@@ -185,8 +185,8 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     /// itself to the frequency + 1 [`Node`].
     ///
     /// If the old [`Node`] no longer has any entries, the [`Node`] is removed.
-    // TODO: Brand LfuEntry?
-    pub(super) fn update(&mut self, mut entry: NonNull<LfuEntry<Key, T>>) {
+    // TODO: Brand Entry?
+    pub(crate) fn update(&mut self, mut entry: NonNull<Entry<Key, T>>) {
         // Generate the next frequency list node if it doesn't exist or isn't
         // n + 1 of the current node's frequency.
         // SAFETY: self is exclusively accessed
@@ -226,7 +226,7 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     /// other words, the lowest frequency items are selected, and of those
     /// items, they are popped like a stack.
     #[inline]
-    pub(super) fn pop_lfu(&mut self) -> Option<WithFrequency<Detached<Key, T>>> {
+    pub(crate) fn pop_lfu(&mut self) -> Option<WithFrequency<Detached<Key, T>>> {
         let mut head_node_ptr = self.head?;
         let head_node = unsafe { head_node_ptr.as_mut() };
 
@@ -244,12 +244,12 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
     /// Returns the most recently added, lowest frequently accessed item if it
     /// exists.
     #[inline]
-    pub(super) fn peek_lfu(&self) -> Option<&T> {
+    pub(crate) fn peek_lfu(&self) -> Option<&T> {
         self.head.and_then(|node| unsafe { node.as_ref() }.peek())
     }
 
     /// Returns an iterator of all frequencies in the list.
-    pub(super) fn frequencies(&self) -> impl Iterator<Item = usize> + FusedIterator + '_ {
+    pub(crate) fn frequencies(&self) -> impl Iterator<Item = usize> + FusedIterator + '_ {
         self.iter().map(|node| node.frequency)
     }
 

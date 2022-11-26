@@ -15,11 +15,10 @@
 //! can not make better use of the CPU cache in comparison to array-based
 //! containers.
 
-mod iter;
+mod frequency_list;
 mod lfu;
+pub mod lfu_map;
 mod timed_lfu;
 
-pub use iter::LfuMapIter;
-pub use lfu::entry::{Entry, OccupiedEntry, VacantEntry};
-pub use lfu::Map as LfuMap;
+pub use lfu_map::LfuMap;
 pub use timed_lfu::TimedLfuMap;

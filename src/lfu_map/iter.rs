@@ -7,11 +7,9 @@ use crate::LfuMap;
 /// least frequently used first.
 ///
 /// This is constructed by calling `into_iter` on any cache implementation.
-// This is re-exported at the crate root, so this lint can be safely ignored.
-#[allow(clippy::module_name_repetitions)]
-pub struct LfuMapIter<Key: Hash + Eq, Value>(pub(crate) LfuMap<Key, Value>);
+pub struct Iter<Key: Hash + Eq, Value>(pub(crate) LfuMap<Key, Value>);
 
-impl<Key: Hash + Eq, Value> Iterator for LfuMapIter<Key, Value> {
+impl<Key: Hash + Eq, Value> Iterator for Iter<Key, Value> {
     type Item = (Key, Value);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -23,9 +21,9 @@ impl<Key: Hash + Eq, Value> Iterator for LfuMapIter<Key, Value> {
     }
 }
 
-impl<Key: Hash + Eq, Value> FusedIterator for LfuMapIter<Key, Value> {}
+impl<Key: Hash + Eq, Value> FusedIterator for Iter<Key, Value> {}
 
-impl<Key: Hash + Eq, Value> ExactSizeIterator for LfuMapIter<Key, Value> {
+impl<Key: Hash + Eq, Value> ExactSizeIterator for Iter<Key, Value> {
     #[inline]
     fn len(&self) -> usize {
         self.0.len()

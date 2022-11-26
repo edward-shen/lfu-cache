@@ -9,13 +9,13 @@ use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use crate::{Entry, LfuMapIter};
-
-use super::freq_list::FrequencyList;
-use super::lfu_entry::LfuEntry;
+use crate::frequency_list::FrequencyList;
+use crate::frequency_list::WithFrequency;
+use crate::lfu::Entry as LfuEntry;
+use crate::lfu_map::Iter;
 
 use super::entry::{OccupiedEntry, VacantEntry};
-use super::node::WithFrequency;
+use super::Entry;
 
 /// A collection that if limited to a certain capacity will evict based on the
 /// least recently used value.
@@ -313,7 +313,7 @@ impl<Key: Hash + Eq, Value> Map<Key, Value> {
     }
 
     /// Clears the cache, returning the iterator of the previous cached values.
-    pub fn clear(&mut self) -> LfuMapIter<Key, Value> {
+    pub fn clear(&mut self) -> Iter<Key, Value> {
         let mut to_return = Self::with_capacity(self.capacity.map_or(0, NonZeroUsize::get));
         std::mem::swap(&mut to_return, self);
         to_return.into_iter()
@@ -439,10 +439,10 @@ impl<Key: Hash + Eq, Value> Extend<(Key, Value)> for Map<Key, Value> {
 impl<Key: Hash + Eq, Value> IntoIterator for Map<Key, Value> {
     type Item = (Key, Value);
 
-    type IntoIter = LfuMapIter<Key, Value>;
+    type IntoIter = Iter<Key, Value>;
 
     fn into_iter(self) -> Self::IntoIter {
-        LfuMapIter(self)
+        Iter(self)
     }
 }
 

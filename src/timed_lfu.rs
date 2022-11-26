@@ -5,8 +5,9 @@ use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use crate::lfu_map::Entry;
+use crate::lfu_map::Iter;
 use crate::LfuMap;
-use crate::{iter::LfuMapIter, Entry};
 
 /// A LFU cache with additional eviction conditions based on the time an entry
 /// has been in cache.
@@ -185,7 +186,7 @@ impl<Key: Hash + Eq, Value> TimedLfuMap<Key, Value> {
 
     /// Clears the cache, returning the iterator of the previous cached values.
     #[inline]
-    pub fn clear(&mut self) -> LfuMapIter<Key, Value> {
+    pub fn clear(&mut self) -> Iter<Key, Value> {
         self.expiry_set.clear();
         self.cache.clear()
     }
@@ -363,10 +364,10 @@ impl<Key: Hash + Eq, Value> Extend<(Key, Value)> for TimedLfuMap<Key, Value> {
 impl<Key: Hash + Eq, Value> IntoIterator for TimedLfuMap<Key, Value> {
     type Item = (Key, Value);
 
-    type IntoIter = LfuMapIter<Key, Value>;
+    type IntoIter = Iter<Key, Value>;
 
     fn into_iter(self) -> Self::IntoIter {
-        LfuMapIter(self.cache)
+        Iter(self.cache)
     }
 }
 
