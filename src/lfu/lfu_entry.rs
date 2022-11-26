@@ -6,45 +6,41 @@ use std::rc::Rc;
 use super::Node;
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub(super) struct LfuEntry<Key: Hash + Eq, T> {
-    /// We still need to keep a linked list implementation for O(1)
-    /// in-the-middle removal.
+pub(super) struct LfuEntry<Key: Hash + Eq, Value> {
+    // We still need to keep a linked list implementation for O(1)
+    // in-the-middle removal.
     pub(super) next: Option<NonNull<Self>>,
     pub(super) prev: Option<NonNull<Self>>,
     /// Instead of traversing up to the frequency node, we just keep a reference
     /// to the owning node. This ensures that entry movement is an O(1)
     /// operation.
-    pub(super) owner: NonNull<Node<Key, T>>,
+    pub(super) owner: NonNull<Node<Key, Value>>,
     /// We need to maintain a pointer to the key as we need to remove the
     /// lookup table entry on lru popping, and we need the key to properly fetch
     /// the correct entry (the hash itself is not guaranteed to return the
     /// correct entry).
     pub(super) key: Rc<Key>,
-    pub(super) value: T,
+    pub(super) value: Value,
 }
 
 #[cfg(not(tarpaulin_include))]
-impl<Key: Hash + Eq, T: Display> Display for LfuEntry<Key, T> {
+impl<Key: Hash + Eq, Value: Display> Display for LfuEntry<Key, Value> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
 
-impl<Key: Hash + Eq, T> LfuEntry<Key, T> {
-    #[must_use]
-    #[cfg(test)]
-    pub(super) fn new(owner: NonNull<Node<Key, T>>, key: Rc<Key>, value: T) -> Self {
-        Self {
-            next: None,
-            prev: None,
-            owner,
-            key,
-            value,
-        }
-    }
-
-    pub(super) fn detach(node: NonNull<Self>) -> Detached<Key, T> {
-        let _ = Self::detach_as_ref(node);
+impl<Key: Hash + Eq, Value> LfuEntry<Key, Value> {
+    /// Fully detaches a [`LfuEntry`] entry, removing all references to and from
+    /// it and deallocating its memory address.
+    ///
+    /// This function should only be used when fully removing the item from the
+    /// cache. [`detach_as_ref`] should be used instead if it will be
+    /// re-attached into the data structure.
+    ///
+    /// [`detach_as_ref`]: Self::detach_as_ref
+    pub(super) fn detach(node: NonNull<Self>) -> Detached<Key, Value> {
+        std::mem::forget(Self::detach_as_ref(node));
         let detached = unsafe { Box::from_raw(node.as_ptr()) };
         Detached {
             key: detached.key,
@@ -52,7 +48,13 @@ impl<Key: Hash + Eq, T> LfuEntry<Key, T> {
         }
     }
 
-    pub(super) fn detach_as_ref(mut node: NonNull<Self>) -> DetachedRef<Key, T> {
+    /// Removes all references to and from the provided [`LfuEntry`], without
+    /// actually deallocating the memory.
+    ///
+    /// This is useful to avoid deallocating memory and immediately
+    /// reallocating, such as in the common operation of moving a [`LfuEntry`]
+    /// to the next frequency node.
+    pub(super) fn detach_as_ref(mut node: NonNull<Self>) -> DetachedRef<Key, Value> {
         // There are five links to fix:
         // ┌──────┐ (1) ┌─────┐ (2) ┌──────┐
         // │      ├────►│     ├────►│      │
@@ -77,6 +79,9 @@ impl<Key: Hash + Eq, T> LfuEntry<Key, T> {
             unsafe { next.as_mut().prev = node_ref.prev };
         }
 
+        // These are probably not needed but are probably a good idea to do
+        // anyways to have a simpler model to work with.
+
         // Fix (2)
         node_ref.next = None;
         // Fix (3)
@@ -89,15 +94,21 @@ impl<Key: Hash + Eq, T> LfuEntry<Key, T> {
 }
 
 #[must_use]
-pub struct DetachedRef<Key: Hash + Eq, T>(NonNull<LfuEntry<Key, T>>);
+pub struct DetachedRef<Key: Hash + Eq, Value>(NonNull<LfuEntry<Key, Value>>);
 
-impl<Key: Hash + Eq, T> DetachedRef<Key, T> {
+impl<Key: Hash + Eq, Value> Drop for DetachedRef<Key, Value> {
+    fn drop(&mut self) {
+        panic!("Detached reference was dropped. You should re-attach it or use std::mem::forget");
+    }
+}
+
+impl<Key: Hash + Eq, Value> DetachedRef<Key, Value> {
     pub(super) fn attach_ref(
         self,
-        prev: Option<NonNull<LfuEntry<Key, T>>>,
-        next: Option<NonNull<LfuEntry<Key, T>>>,
-        owner: NonNull<Node<Key, T>>,
-    ) -> NonNull<LfuEntry<Key, T>> {
+        prev: Option<NonNull<LfuEntry<Key, Value>>>,
+        next: Option<NonNull<LfuEntry<Key, Value>>>,
+        owner: NonNull<Node<Key, Value>>,
+    ) -> NonNull<LfuEntry<Key, Value>> {
         // There are five links to fix:
         // ┌──────┐ (1) ┌─────┐ (2) ┌──────┐
         // │      ├────►│     ├────►│      │
@@ -127,6 +138,9 @@ impl<Key: Hash + Eq, T> DetachedRef<Key, T> {
             unsafe { next.as_mut() }.prev = Some(node);
         }
 
+        // DetachedRef explicitly has a drop impl that panics if we don't
+        // explicitly forget about it.
+        std::mem::forget(self);
         node
     }
 }
@@ -138,22 +152,22 @@ impl<Key: Hash + Eq, T> DetachedRef<Key, T> {
 /// neighbors that might be pointing to it.
 #[must_use]
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Clone)]
-pub(super) struct Detached<Key, T> {
+pub(super) struct Detached<Key, Value> {
     pub(super) key: Rc<Key>,
-    pub(super) value: T,
+    pub(super) value: Value,
 }
 
-impl<Key: Hash + Eq, T> Detached<Key, T> {
-    pub fn new(key: Rc<Key>, value: T) -> Self {
+impl<Key: Hash + Eq, Value> Detached<Key, Value> {
+    pub fn new(key: Rc<Key>, value: Value) -> Self {
         Self { key, value }
     }
 
     pub fn attach(
         self,
-        prev: Option<NonNull<LfuEntry<Key, T>>>,
-        next: Option<NonNull<LfuEntry<Key, T>>>,
-        owner: NonNull<Node<Key, T>>,
-    ) -> NonNull<LfuEntry<Key, T>> {
+        prev: Option<NonNull<LfuEntry<Key, Value>>>,
+        next: Option<NonNull<LfuEntry<Key, Value>>>,
+        owner: NonNull<Node<Key, Value>>,
+    ) -> NonNull<LfuEntry<Key, Value>> {
         // There are five links to fix:
         // ┌──────┐ (1) ┌─────┐ (2) ┌──────┐
         // │      ├────►│     ├────►│      │
@@ -188,25 +202,5 @@ impl<Key: Hash + Eq, T> Detached<Key, T> {
             unsafe { prev.as_mut() }.next = Some(non_null);
         }
         non_null
-    }
-}
-
-#[cfg(test)]
-mod entry {
-    use super::LfuEntry;
-    use std::ptr::NonNull;
-    use std::rc::Rc;
-
-    #[test]
-    fn new_constructs_dangling_entry_with_owner() {
-        let owner = NonNull::dangling();
-        let key = Rc::new(1);
-        let entry = LfuEntry::new(owner, Rc::clone(&key), 2);
-
-        assert!(entry.next.is_none());
-        assert!(entry.prev.is_none());
-        assert_eq!(entry.owner, owner);
-        assert_eq!(entry.key, key);
-        assert_eq!(entry.value, 2);
     }
 }
