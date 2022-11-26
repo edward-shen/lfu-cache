@@ -6,7 +6,7 @@ use crate::frequency_list::Node;
 use super::Entry;
 
 /// Removes the entry from the cache, cleaning up any values if necessary.
-pub(crate) fn remove_entry_pointer<Key, Value>(
+pub fn remove_entry_pointer<Key, Value>(
     mut node: Entry<Key, Value>,
     len: &mut usize,
 ) -> Value

@@ -5,21 +5,23 @@ use crate::frequency_list::Node;
 
 use super::Entry;
 
-/// Wrapper newtype pattern representing a temporarily detached [`LfuEntry`].
+/// Wrapper newtype pattern representing a temporarily detached [`Entry`].
 ///
 /// A detached LFU entry is guaranteed to not be internally pointing to
 /// anything. Obtaining a detached LFU entry is also guaranteed to fix any
 /// neighbors that might be pointing to it.
 ///
 /// Unlike [`Detached`], this does not deallocate the memory associated with
-/// the [`LfuEntry`]. Instead, this is an optimization for reusing the detached
-/// [`LfuEntry`] at some point after.
+/// the [`Entry`]. Instead, this is an optimization for reusing the detached
+/// [`Entry`] at some point after.
 ///
 /// # Panics
 ///
 /// Because this is intended as an optimization, not re-attaching the detached
 /// value will likely lead to a memory leak. As a result, this intentionally
 /// panics to avoid this scenario.
+///
+/// [`Detached`]: super::Detached
 #[must_use]
 pub struct DetachedRef<Key: Hash + Eq, Value>(NonNull<Entry<Key, Value>>);
 
@@ -30,7 +32,7 @@ impl<Key: Hash + Eq, Value> Drop for DetachedRef<Key, Value> {
 }
 
 impl<Key: Hash + Eq, Value> DetachedRef<Key, Value> {
-    pub(crate) fn new(inner: NonNull<Entry<Key, Value>>) -> Self {
+    pub(crate) const fn new(inner: NonNull<Entry<Key, Value>>) -> Self {
         Self(inner)
     }
 

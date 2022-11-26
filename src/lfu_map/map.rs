@@ -454,7 +454,7 @@ mod get {
     fn empty() {
         let mut cache = Map::<u64, u64>::unbounded();
         for i in 0..100 {
-            assert!(cache.get(&i).is_none())
+            assert!(cache.get(&i).is_none());
         }
     }
 

@@ -4,7 +4,7 @@ use std::ptr::NonNull;
 use crate::lfu::{Detached, DetachedRef, Entry};
 
 #[derive(Default, Eq, Ord, PartialOrd, Debug)]
-pub(crate) struct Node<Key: Hash + Eq, T> {
+pub struct Node<Key: Hash + Eq, T> {
     pub(crate) next: Option<NonNull<Self>>,
     pub(crate) prev: Option<NonNull<Self>>,
     pub(crate) elements: Option<NonNull<Entry<Key, T>>>,
@@ -144,7 +144,7 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
 }
 
 #[derive(Default, PartialEq, Eq, Ord, PartialOrd, Debug)]
-pub(crate) struct WithFrequency<T>(pub usize, pub T);
+pub struct WithFrequency<T>(pub usize, pub T);
 
 #[cfg(test)]
 mod node {
@@ -170,7 +170,7 @@ mod node {
 
     impl<K: Hash + Eq, V> Drop for AutoDropNode<K, V> {
         fn drop(&mut self) {
-            while let Some(_) = self.0.pop() {}
+            while self.0.pop().is_some() {}
         }
     }
 
@@ -329,11 +329,11 @@ mod node {
 
         // insert first node
         let entry_0 = Detached::new(Rc::new(1), 2);
-        Node::push(NonNull::from(&mut *node), entry_0.clone());
+        Node::push(NonNull::from(&mut *node), entry_0);
 
         // insert second node
         let entry_1 = Detached::new(Rc::new(1), 3);
-        Node::push(NonNull::from(&mut *node), entry_1.clone());
+        Node::push(NonNull::from(&mut *node), entry_1);
 
         // insert last node
         let entry_2 = Detached::new(Rc::new(1), 4);

@@ -8,7 +8,7 @@ use crate::frequency_list::Node;
 use super::{Detached, DetachedRef};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub(crate) struct Entry<Key: Hash + Eq, Value> {
+pub struct Entry<Key: Hash + Eq, Value> {
     // We still need to keep a linked list implementation for O(1)
     // in-the-middle removal.
     pub(crate) next: Option<NonNull<Self>>,
@@ -33,7 +33,7 @@ impl<Key: Hash + Eq, Value: Display> Display for Entry<Key, Value> {
 }
 
 impl<Key: Hash + Eq, Value> Entry<Key, Value> {
-    /// Fully detaches a [`LfuEntry`] entry, removing all references to and from
+    /// Fully detaches a [`Entry`] entry, removing all references to and from
     /// it and deallocating its memory address.
     ///
     /// This function should only be used when fully removing the item from the
@@ -50,11 +50,11 @@ impl<Key: Hash + Eq, Value> Entry<Key, Value> {
         }
     }
 
-    /// Removes all references to and from the provided [`LfuEntry`], without
+    /// Removes all references to and from the provided [`Entry`], without
     /// actually deallocating the memory.
     ///
     /// This is useful to avoid deallocating memory and immediately
-    /// reallocating, such as in the common operation of moving a [`LfuEntry`]
+    /// reallocating, such as in the common operation of moving a [`Entry`]
     /// to the next frequency node.
     pub(crate) fn detach(mut node: NonNull<Self>) -> DetachedRef<Key, Value> {
         // There are five links to fix:

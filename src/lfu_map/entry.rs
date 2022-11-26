@@ -275,7 +275,7 @@ impl<'a, Key: Hash + Eq, Value: Default> Entry<'a, Key, Value> {
 }
 
 #[cfg(test)]
-mod entry {
+mod entry_api {
     use crate::LfuMap;
 
     fn init_cache() -> LfuMap<i32, i32> {

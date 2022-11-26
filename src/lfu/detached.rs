@@ -6,14 +6,14 @@ use crate::frequency_list::Node;
 
 use super::Entry;
 
-/// Wrapper newtype pattern representing a detached [`LfuEntry`].
+/// Wrapper newtype pattern representing a detached [`Entry`].
 ///
 /// A detached LFU entry is guaranteed to not be internally pointing to
 /// anything. Obtaining a detached LFU entry is also guaranteed to fix any
 /// neighbors that might be pointing to it.
 #[must_use]
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Clone)]
-pub(crate) struct Detached<Key, Value> {
+pub struct Detached<Key, Value> {
     pub(crate) key: Rc<Key>,
     pub(crate) value: Value,
 }
