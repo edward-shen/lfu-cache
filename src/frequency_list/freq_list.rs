@@ -62,6 +62,9 @@ pub struct FrequencyList<Key, T> {
     pub(crate) head: Option<NonNull<Node<Key, T>>>,
 }
 
+unsafe impl<Key: Send, T: Send> Send for FrequencyList<Key, T> {}
+unsafe impl<Key: Sync, T: Sync> Sync for FrequencyList<Key, T> {}
+
 impl<Key, Value> Default for FrequencyList<Key, Value> {
     fn default() -> Self {
         Self::new()

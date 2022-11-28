@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use crate::lfu::Entry;
 
-pub(crate) struct LookupTable<Key, Value>(pub(crate) HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>);
+pub struct LookupTable<Key, Value>(pub(crate) HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>);
 
 #[cfg(not(tarpaulin_include))]
 impl<Key: Debug, Value> Debug for LookupTable<Key, Value> {

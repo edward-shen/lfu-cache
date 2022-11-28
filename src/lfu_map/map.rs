@@ -27,8 +27,8 @@ pub struct Map<Key, Value> {
     len: usize,
 }
 
-unsafe impl<Key, Value> Send for Map<Key, Value> {}
-unsafe impl<Key, Value> Sync for Map<Key, Value> {}
+unsafe impl<Key: Send, Value: Send> Send for Map<Key, Value> {}
+unsafe impl<Key: Sync, Value: Sync> Sync for Map<Key, Value> {}
 
 impl<Key: Eq + Hash, Value: PartialEq> PartialEq for Map<Key, Value> {
     fn eq(&self, other: &Self) -> bool {
