@@ -137,14 +137,6 @@ impl<'a, Key, Value> VacantEntry<'a, Key, Value> {
         self.key.as_ref()
     }
 
-    /// Gets a [`Rc`] to the key that would be used when inserting a value
-    /// through the [`VacantEntry`].
-    #[inline]
-    #[must_use]
-    pub fn key_rc(&self) -> Rc<Key> {
-        Rc::clone(&self.key)
-    }
-
     /// Take ownership of the key.
     #[inline]
     #[must_use]
@@ -228,16 +220,6 @@ impl<'a, Key, Value> Entry<'a, Key, Value> {
         match self {
             Entry::Occupied(entry) => entry.inner.key(),
             Entry::Vacant(entry) => entry.key.as_ref(),
-        }
-    }
-
-    /// Returns the `Rc` to this entry's key.
-    #[inline]
-    #[must_use]
-    pub fn key_rc(&self) -> Rc<Key> {
-        match self {
-            Entry::Occupied(entry) => Rc::clone(entry.inner.key()),
-            Entry::Vacant(entry) => Rc::clone(&entry.key),
         }
     }
 
