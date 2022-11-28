@@ -18,7 +18,7 @@
 mod frequency_list;
 mod lfu;
 pub mod lfu_map;
-mod timed_lfu;
+// mod timed_lfu;
 
 pub use lfu_map::LfuMap;
-pub use timed_lfu::TimedLfuMap;
+// pub use timed_lfu::TimedLfuMap;
