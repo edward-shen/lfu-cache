@@ -6,10 +6,10 @@ use std::rc::Rc;
 
 use crate::lfu::Entry;
 
-pub(crate) struct LookupMap<Key, Value>(pub(crate) HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>);
+pub(crate) struct LookupTable<Key, Value>(pub(crate) HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>);
 
 #[cfg(not(tarpaulin_include))]
-impl<Key: Debug, Value> Debug for LookupMap<Key, Value> {
+impl<Key: Debug, Value> Debug for LookupTable<Key, Value> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut dbg = f.debug_struct("LookupMap");
         for (key, value) in &self.0 {
@@ -21,7 +21,7 @@ impl<Key: Debug, Value> Debug for LookupMap<Key, Value> {
     }
 }
 
-impl<Key, Value> PartialEq for LookupMap<Key, Value>
+impl<Key, Value> PartialEq for LookupTable<Key, Value>
 where
     Key: Eq + Hash,
 {
@@ -30,7 +30,7 @@ where
     }
 }
 
-impl<Key, Value> Drop for LookupMap<Key, Value> {
+impl<Key, Value> Drop for LookupTable<Key, Value> {
     fn drop(&mut self) {
         for (_, v) in self.0.drain() {
             unsafe { Box::from_raw(v.as_ptr()) };

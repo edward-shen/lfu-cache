@@ -14,14 +14,14 @@ use crate::frequency_list::WithFrequency;
 use crate::lfu_map::IntoIter;
 
 use super::entry::{OccupiedEntry, VacantEntry};
-use super::{Entry, LookupMap};
+use super::{Entry, LookupTable};
 
 /// A collection that if limited to a certain capacity will evict based on the
 /// least recently used value.
 // Note that Default is _not_ implemented. This is intentional, as most people
 // likely don't want an unbounded LFU cache by default.
 pub struct Map<Key, Value> {
-    lookup: LookupMap<Key, Value>,
+    lookup: LookupTable<Key, Value>,
     freq_list: FrequencyList<Key, Value>,
     capacity: Option<NonZeroUsize>,
     len: usize,
@@ -69,7 +69,7 @@ impl<Key, Value> Map<Key, Value> {
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            lookup: LookupMap(HashMap::with_capacity(capacity)),
+            lookup: LookupTable(HashMap::with_capacity(capacity)),
             freq_list: FrequencyList::new(),
             capacity: NonZeroUsize::new(capacity),
             len: 0,
