@@ -18,7 +18,7 @@ pub struct Detached<Key, Value> {
     pub(crate) value: Value,
 }
 
-impl<Key: Hash + Eq, Value> Detached<Key, Value> {
+impl<Key, Value> Detached<Key, Value> {
     pub fn new(key: Rc<Key>, value: Value) -> Self {
         Self { key, value }
     }

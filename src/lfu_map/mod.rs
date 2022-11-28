@@ -4,9 +4,11 @@
 //! [`HashMap`]: std::collections::HashMap
 
 mod entry;
-mod iter;
+mod into_iter;
+mod lookup_map;
 mod map;
 
 pub use entry::{Entry, OccupiedEntry, VacantEntry};
-pub use iter::Iter;
+pub use into_iter::IntoIter;
+use lookup_map::LookupMap;
 pub use map::Map as LfuMap;

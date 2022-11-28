@@ -4,27 +4,27 @@ use std::ptr::NonNull;
 use crate::lfu::{Detached, DetachedRef, Entry};
 
 #[derive(Default, Eq, Ord, PartialOrd, Debug)]
-pub struct Node<Key: Hash + Eq, T> {
+pub struct Node<Key, T> {
     pub(crate) next: Option<NonNull<Self>>,
     pub(crate) prev: Option<NonNull<Self>>,
     pub(crate) elements: Option<NonNull<Entry<Key, T>>>,
     pub(crate) frequency: usize,
 }
 
-impl<Key: Hash + Eq, T> PartialEq for Node<Key, T> {
+impl<Key, T> PartialEq for Node<Key, T> {
     fn eq(&self, other: &Self) -> bool {
         self.frequency == other.frequency
     }
 }
 
 #[cfg(not(tarpaulin_include))]
-impl<Key: Hash + Eq, T> Hash for Node<Key, T> {
+impl<Key, T> Hash for Node<Key, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.frequency);
     }
 }
 
-impl<Key: Hash + Eq, T> Drop for Node<Key, T> {
+impl<Key, T> Drop for Node<Key, T> {
     fn drop(&mut self) {
         // Note that we do _NOT_ drop the elements field. That field should be
         // managed by the lookup table, and thus freeing them results in a
@@ -36,7 +36,7 @@ impl<Key: Hash + Eq, T> Drop for Node<Key, T> {
     }
 }
 
-impl<Key: Hash + Eq, T> Node<Key, T> {
+impl<Key, T> Node<Key, T> {
     pub(crate) fn create_increment(mut node: NonNull<Self>) -> NonNull<Self> {
         // There are four links to fix:
         // ┌─────┐ (1) ┌─────┐ (2) ┌──────┐
@@ -151,7 +151,6 @@ mod node {
     use super::Node;
     use crate::frequency_list::WithFrequency;
     use crate::lfu::Detached;
-    use std::hash::Hash;
     use std::ops::{Deref, DerefMut};
     use std::ptr::NonNull;
     use std::rc::Rc;
@@ -166,15 +165,15 @@ mod node {
     /// unlike the standard behavior, drops its elements.
     #[derive(Default)]
     #[repr(transparent)]
-    struct AutoDropNode<K: Hash + Eq, V>(Node<K, V>);
+    struct AutoDropNode<K, V>(Node<K, V>);
 
-    impl<K: Hash + Eq, V> Drop for AutoDropNode<K, V> {
+    impl<K, V> Drop for AutoDropNode<K, V> {
         fn drop(&mut self) {
             while self.0.pop().is_some() {}
         }
     }
 
-    impl<K: Hash + Eq, V> Deref for AutoDropNode<K, V> {
+    impl<K, V> Deref for AutoDropNode<K, V> {
         type Target = Node<K, V>;
 
         fn deref(&self) -> &Self::Target {
@@ -182,13 +181,13 @@ mod node {
         }
     }
 
-    impl<K: Hash + Eq, V> DerefMut for AutoDropNode<K, V> {
+    impl<K, V> DerefMut for AutoDropNode<K, V> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.0
         }
     }
 
-    impl<K: Hash + Eq, V> PartialEq<Node<K, V>> for AutoDropNode<K, V> {
+    impl<K, V> PartialEq<Node<K, V>> for AutoDropNode<K, V> {
         fn eq(&self, other: &Node<K, V>) -> bool {
             &self.0 == other
         }

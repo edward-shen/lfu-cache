@@ -8,7 +8,7 @@ use crate::frequency_list::Node;
 use super::{Detached, DetachedRef};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct Entry<Key: Hash + Eq, Value> {
+pub struct Entry<Key, Value> {
     // We still need to keep a linked list implementation for O(1)
     // in-the-middle removal.
     pub(crate) next: Option<NonNull<Self>>,
@@ -26,13 +26,13 @@ pub struct Entry<Key: Hash + Eq, Value> {
 }
 
 #[cfg(not(tarpaulin_include))]
-impl<Key: Hash + Eq, Value: Display> Display for Entry<Key, Value> {
+impl<Key, Value: Display> Display for Entry<Key, Value> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
 
-impl<Key: Hash + Eq, Value> Entry<Key, Value> {
+impl<Key, Value> Entry<Key, Value> {
     /// Fully detaches a [`Entry`] entry, removing all references to and from
     /// it and deallocating its memory address.
     ///

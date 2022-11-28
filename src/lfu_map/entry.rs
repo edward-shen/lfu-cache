@@ -3,21 +3,19 @@
 use std::collections::hash_map::{
     OccupiedEntry as InnerOccupiedEntry, VacantEntry as InnerVacantEntry,
 };
-use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
 use crate::frequency_list::FrequencyList;
-use crate::lfu::remove_entry_pointer;
-use crate::lfu::Entry as LfuEntry;
+use crate::lfu::{remove_entry_pointer, Entry as LfuEntry};
 
 /// A view into a single entry in the LFU cache, which may either be vacant or
 /// occupied.
 ///
 /// This `enum` is constructed from the `entry` function on any of the LFU
 /// caches.
-pub enum Entry<'a, Key: Hash + Eq, Value> {
+pub enum Entry<'a, Key, Value> {
     /// An occupied entry.
     Occupied(OccupiedEntry<'a, Key, Value>),
     /// A vacant entry.
@@ -28,12 +26,12 @@ pub enum Entry<'a, Key: Hash + Eq, Value> {
 /// enum.
 // This structure is re-exported at the root, so it's okay to be repetitive.
 #[allow(clippy::module_name_repetitions)]
-pub struct OccupiedEntry<'a, Key: Hash + Eq, Value> {
+pub struct OccupiedEntry<'a, Key, Value> {
     inner: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
     len: &'a mut usize,
 }
 
-impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
+impl<'a, Key, Value> OccupiedEntry<'a, Key, Value> {
     pub(super) fn new(
         entry: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
         len: &'a mut usize,
@@ -106,7 +104,7 @@ impl<'a, Key: Hash + Eq, Value> OccupiedEntry<'a, Key, Value> {
 /// A view into a vacant entry in a LFU cache. It is part of the [`Entry`] enum.
 // This structure is re-exported at the root, so it's okay to be repetitive.
 #[allow(clippy::module_name_repetitions)]
-pub struct VacantEntry<'a, Key: Hash + Eq, Value> {
+pub struct VacantEntry<'a, Key, Value> {
     inner: InnerVacantEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
     key: Rc<Key>,
     freq_list: &'a mut FrequencyList<Key, Value>,
@@ -114,7 +112,7 @@ pub struct VacantEntry<'a, Key: Hash + Eq, Value> {
     cache_len: &'a mut usize,
 }
 
-impl<'a, Key: Hash + Eq, Value> VacantEntry<'a, Key, Value> {
+impl<'a, Key, Value> VacantEntry<'a, Key, Value> {
     pub(super) fn new(
         entry: InnerVacantEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
         key: Rc<Key>,
@@ -177,7 +175,7 @@ impl<'a, Key: Hash + Eq, Value> VacantEntry<'a, Key, Value> {
     }
 }
 
-impl<'a, Key: Hash + Eq, Value> Entry<'a, Key, Value> {
+impl<'a, Key, Value> Entry<'a, Key, Value> {
     /// Ensures a value is in the entry by inserting the default if empty, and
     /// returns a mutable reference to the value in the entry.
     #[inline]
@@ -261,7 +259,7 @@ impl<'a, Key: Hash + Eq, Value> Entry<'a, Key, Value> {
     }
 }
 
-impl<'a, Key: Hash + Eq, Value: Default> Entry<'a, Key, Value> {
+impl<'a, Key, Value: Default> Entry<'a, Key, Value> {
     /// Ensures a value is in the entry by inserting the default value if empty,
     /// and returns a mutable reference to the value in the entry.
     #[inline]

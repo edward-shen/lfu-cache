@@ -1,4 +1,3 @@
-use std::hash::Hash;
 use std::ptr::NonNull;
 
 use crate::frequency_list::Node;
@@ -6,12 +5,8 @@ use crate::frequency_list::Node;
 use super::Entry;
 
 /// Removes the entry from the cache, cleaning up any values if necessary.
-pub fn remove_entry_pointer<Key, Value>(
-    mut node: Entry<Key, Value>,
-    len: &mut usize,
-) -> Value
+pub fn remove_entry_pointer<Key, Value>(mut node: Entry<Key, Value>, len: &mut usize) -> Value
 where
-    Key: Hash + Eq,
 {
     let owner = unsafe { node.owner.as_mut() };
     drop(Entry::detach_owned(NonNull::from(&mut node)));

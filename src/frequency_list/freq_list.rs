@@ -7,6 +7,7 @@ use std::rc::Rc;
 use crate::lfu::{Detached, Entry};
 
 use super::node::{Node, WithFrequency};
+use super::{IntoIter, Iter};
 
 /// Represents the internal data structure to determine frequencies of some
 /// items.
@@ -55,20 +56,20 @@ use super::node::{Node, WithFrequency};
 ///
 /// It currently is illegal for a [`Node`] to exist but have no child elements.
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct FrequencyList<Key: Hash + Eq, T> {
+pub struct FrequencyList<Key, T> {
     /// The first node in the frequency list which may or may not exist. This
     /// item is heap allocated.
     pub(crate) head: Option<NonNull<Node<Key, T>>>,
 }
 
-impl<Key: Hash + Eq, Value> Default for FrequencyList<Key, Value> {
+impl<Key, Value> Default for FrequencyList<Key, Value> {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[cfg(not(tarpaulin_include))]
-impl<Key: Hash + Eq, T> Debug for FrequencyList<Key, T> {
+impl<Key, T> Debug for FrequencyList<Key, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut dbg = f.debug_struct("FrequencyList");
         let mut node = self.head;
@@ -86,7 +87,7 @@ impl<Key: Hash + Eq, T> Debug for FrequencyList<Key, T> {
 }
 
 #[cfg(not(tarpaulin_include))]
-impl<Key: Hash + Eq, T: Display> Display for FrequencyList<Key, T> {
+impl<Key, T: Display> Display for FrequencyList<Key, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut cur_node = self.head;
 
@@ -106,7 +107,7 @@ impl<Key: Hash + Eq, T: Display> Display for FrequencyList<Key, T> {
     }
 }
 
-impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
+impl<Key, T> Drop for FrequencyList<Key, T> {
     fn drop(&mut self) {
         if let Some(ptr) = self.head {
             // SAFETY: self is exclusively accessed
@@ -115,7 +116,7 @@ impl<Key: Hash + Eq, T> Drop for FrequencyList<Key, T> {
     }
 }
 
-impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
+impl<Key, T> FrequencyList<Key, T> {
     #[inline]
     pub(crate) const fn new() -> Self {
         Self { head: None }
@@ -255,37 +256,33 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
 
     /// Iterates through the frequency list, returning the number of [`Node`]s
     /// in the list.
-    #[cfg(test)]
-    pub fn len(&self) -> usize {
-        self.iter().count()
+    pub(crate) fn len(&self) -> usize {
+        self.iter().len()
     }
 
     /// Returns an iterator over all [`Node`]s in the frequency list.
     fn iter(&self) -> Iter<'_, Key, T> {
-        Iter(self.head.map(|v| unsafe { v.as_ref() }))
+        let mut len = 0;
+        let mut head = self.head;
+        while let Some(some_head) = head {
+            len += 1;
+            head = unsafe { some_head.as_ref() }.next;
+        }
+
+        Iter(self.head.map(|v| unsafe { v.as_ref() }), len)
     }
 }
 
-/// An iterator over the [`Node`]s in the frequency list.
-///
-/// This is created by [`FrequencyList::iter`].
-// Note that this internally contains a reference to a Node rather than a
-// pointer to one. This is intentional to associate the lifetime of Iter to the
-// derived frequency list.
-#[derive(Debug)]
-struct Iter<'a, Key: Hash + Eq, Value>(Option<&'a Node<Key, Value>>);
+impl<Key, T> IntoIterator for FrequencyList<Key, T> {
+    type Item = WithFrequency<Detached<Key, T>>;
 
-impl<'a, Key: Hash + Eq, Value> Iterator for Iter<'a, Key, Value> {
-    type Item = &'a Node<Key, Value>;
+    type IntoIter = IntoIter<Key, T>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let ret = self.0?;
-        self.0 = ret.next.map(|v| unsafe { v.as_ref() });
-        Some(ret)
+    fn into_iter(self) -> Self::IntoIter {
+        let len = self.len();
+        IntoIter(self, len)
     }
 }
-
-impl<'a, Key: Hash + Eq, Value> FusedIterator for Iter<'a, Key, Value> {}
 
 #[cfg(test)]
 mod frequency_list {

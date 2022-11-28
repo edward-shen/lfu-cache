@@ -1,4 +1,3 @@
-use std::hash::Hash;
 use std::ptr::NonNull;
 
 use crate::frequency_list::Node;
@@ -23,15 +22,15 @@ use super::Entry;
 ///
 /// [`Detached`]: super::Detached
 #[must_use]
-pub struct DetachedRef<Key: Hash + Eq, Value>(NonNull<Entry<Key, Value>>);
+pub struct DetachedRef<Key, Value>(NonNull<Entry<Key, Value>>);
 
-impl<Key: Hash + Eq, Value> Drop for DetachedRef<Key, Value> {
+impl<Key, Value> Drop for DetachedRef<Key, Value> {
     fn drop(&mut self) {
         panic!("Detached reference was dropped. You should re-attach it or use std::mem::forget");
     }
 }
 
-impl<Key: Hash + Eq, Value> DetachedRef<Key, Value> {
+impl<Key, Value> DetachedRef<Key, Value> {
     pub(crate) const fn new(inner: NonNull<Entry<Key, Value>>) -> Self {
         Self(inner)
     }
