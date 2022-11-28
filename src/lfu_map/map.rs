@@ -64,8 +64,8 @@ impl<Key: Hash + Eq, Value> Map<Key, Value> {
     /// collection, the most recently added item is evicted.
     ///
     /// ```
-    /// # use lfu_cache::LfuCache;
-    /// let mut cache = LfuCache::with_capacity(2);
+    /// # use lfu_cache::LfuMap;
+    /// let mut cache = LfuMap::with_capacity(2);
     ///
     /// // Fill up the cache.
     /// cache.insert("foo", 3);
