@@ -13,7 +13,7 @@ use crate::frequency_list::FrequencyList;
 use crate::frequency_list::WithFrequency;
 use crate::lfu_map::IntoIter;
 
-use super::{Entry, LookupTable};
+use super::{Entry, LookupTable, PeekIter};
 use super::{Keys, PeekValues};
 use super::{OccupiedEntry, VacantEntry};
 
@@ -254,11 +254,8 @@ impl<Key, Value> Map<Key, Value> {
     /// order. Note that this does **not** increment the count for any of the
     /// values.
     #[inline]
-    pub fn peek_iter(&self) -> impl Iterator<Item = (&Key, &Value)> + FusedIterator + '_ {
-        self.lookup
-            .0
-            .iter()
-            .map(|(key, value)| (key.borrow(), &unsafe { value.as_ref() }.value))
+    pub fn peek_iter(&self) -> PeekIter<Key, Value> {
+        PeekIter(self.lookup.0.iter())
     }
 }
 
