@@ -14,6 +14,7 @@ impl<Key, Value> Iterator for IntoIter<Key, Value> {
         self.0.pop_lfu()
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.1, Some(self.1))
     }

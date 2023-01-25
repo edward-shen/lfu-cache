@@ -4,6 +4,7 @@
 //! [`HashMap`]: std::collections::HashMap
 
 mod entry;
+mod frequencies;
 mod into_iter;
 mod keys;
 mod lookup_table;
@@ -12,6 +13,7 @@ mod peek_iter;
 mod peek_values;
 
 pub use entry::{Entry, OccupiedEntry, VacantEntry};
+pub use frequencies::Frequencies;
 pub use into_iter::IntoIter;
 pub use keys::Keys;
 use lookup_table::LookupTable;

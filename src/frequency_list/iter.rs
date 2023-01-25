@@ -21,6 +21,7 @@ impl<'a, Key, Value> Iterator for Iter<'a, Key, Value> {
         Some(ret)
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.1, Some(self.1))
     }

@@ -1,13 +1,12 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
-use std::iter::FusedIterator;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
 use crate::lfu::{Detached, Entry};
 
 use super::node::{Node, WithFrequency};
-use super::{IntoIter, Iter};
+use super::{Frequencies, IntoIter, Iter};
 
 /// Represents the internal data structure to determine frequencies of some
 /// items.
@@ -253,8 +252,8 @@ impl<Key, T> FrequencyList<Key, T> {
     }
 
     /// Returns an iterator of all frequencies in the list.
-    pub(crate) fn frequencies(&self) -> impl Iterator<Item = usize> + FusedIterator + '_ {
-        self.iter().map(|node| node.frequency)
+    pub(crate) fn frequencies(&self) -> Frequencies<Key, T> {
+        Frequencies(self.iter())
     }
 
     /// Iterates through the frequency list, returning the number of [`Node`]s

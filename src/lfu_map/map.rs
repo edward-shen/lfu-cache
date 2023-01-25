@@ -12,7 +12,7 @@ use crate::frequency_list::FrequencyList;
 use crate::frequency_list::WithFrequency;
 use crate::lfu_map::IntoIter;
 
-use super::{Entry, LookupTable, PeekIter};
+use super::{Entry, Frequencies, LookupTable, PeekIter};
 use super::{Keys, PeekValues};
 use super::{OccupiedEntry, VacantEntry};
 
@@ -231,9 +231,8 @@ impl<Key, Value> Map<Key, Value> {
     /// operation.
     #[inline]
     #[must_use]
-    pub fn frequencies(&self) -> Vec<usize> {
-        // TODO: Breaking change -> return impl iterator
-        self.freq_list.frequencies().collect()
+    pub fn frequencies(&self) -> Frequencies<Key, Value> {
+        Frequencies(self.freq_list.frequencies())
     }
 
     /// Returns an iterator over the keys of the LFU cache in any order.
@@ -522,9 +521,9 @@ mod get {
     fn get_mut() {
         let mut cache = Map::unbounded();
         cache.insert(1, 2);
-        assert_eq!(cache.frequencies(), vec![0]);
+        assert_eq!(cache.frequencies().collect::<Vec<_>>(), vec![0]);
         *cache.get_mut(&1).unwrap() = 3;
-        assert_eq!(cache.frequencies(), vec![1]);
+        assert_eq!(cache.frequencies().collect::<Vec<_>>(), vec![1]);
         assert_eq!(cache.get(&1), Some(&3));
     }
 
@@ -548,7 +547,7 @@ mod get {
         }
 
         assert_eq!(cache.len(), 2);
-        assert_eq!(cache.frequencies(), vec![100]);
+        assert_eq!(cache.frequencies().collect::<Vec<_>>(), vec![100]);
     }
 }
 
@@ -576,7 +575,7 @@ mod insert {
         cache.insert(1, 1);
         cache.get(&1);
         cache.insert(1, 1);
-        assert_eq!(cache.frequencies(), vec![0]);
+        assert_eq!(cache.frequencies().collect::<Vec<_>>(), vec![0]);
     }
 
     #[test]
@@ -701,7 +700,7 @@ mod remove {
         cache.get(&9);
         cache.get(&11);
 
-        assert_eq!(cache.frequencies(), vec![0, 1]);
+        assert_eq!(cache.frequencies().collect::<Vec<_>>(), vec![0, 1]);
         assert_eq!(cache.len(), 6);
 
         cache.remove(&9);
@@ -727,7 +726,7 @@ mod remove {
         cache.get(&9);
         cache.get(&11);
 
-        assert_eq!(cache.frequencies(), vec![0, 1]);
+        assert_eq!(cache.frequencies().collect::<Vec<_>>(), vec![0, 1]);
         assert_eq!(cache.len(), 6);
 
         cache.remove(&7);
@@ -753,7 +752,7 @@ mod remove {
         cache.get(&9);
         cache.get(&11);
 
-        assert_eq!(cache.frequencies(), vec![0, 1]);
+        assert_eq!(cache.frequencies().collect::<Vec<_>>(), vec![0, 1]);
         assert_eq!(cache.len(), 6);
 
         cache.remove(&11);

@@ -273,7 +273,7 @@ mod entry_api {
 
         // test cache has been updated correctly
         assert_eq!(cache.keys().copied().collect::<Vec<_>>(), vec![1]);
-        assert_eq!(cache.frequencies(), vec![0]);
+        assert_eq!(cache.frequencies().collect::<Vec<_>>(), vec![0]);
         assert_eq!(cache.get(&1), Some(&2));
         assert_eq!(cache.len(), 1);
     }
@@ -290,7 +290,7 @@ mod entry_api {
 
         // test cache has been updated correctly
         assert_eq!(cache.keys().copied().collect::<Vec<_>>(), vec![1]);
-        assert_eq!(cache.frequencies(), vec![1]);
+        assert_eq!(cache.frequencies().collect::<Vec<_>>(), vec![1]);
         assert_eq!(cache.get(&1), Some(&2));
         assert_eq!(cache.len(), 1);
     }
