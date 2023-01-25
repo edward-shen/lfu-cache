@@ -432,6 +432,17 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
 
     /// Gets a value and increments the internal frequency counter of that
     /// value, if it exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut map = LfuMap::from_iter([(1, 2)]);
+    ///
+    /// assert_eq!(map.get(&1), Some(&2));
+    /// assert_eq!(map.frequencies().collect::<Vec<_>>(), vec![1]);
+    /// ```
     #[inline]
     pub fn get<Q>(&mut self, key: &Q) -> Option<&Value>
     where
@@ -446,6 +457,17 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
 
     /// Gets a mutable value and increments the internal frequency counter of
     /// that value, if it exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut map = LfuMap::from_iter([(1, 2)]);
+    ///
+    /// assert_eq!(map.get_mut(&1), Some(&mut 2));
+    /// assert_eq!(map.frequencies().collect::<Vec<_>>(), vec![1]);
+    /// ```
     #[inline]
     pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut Value>
     where
