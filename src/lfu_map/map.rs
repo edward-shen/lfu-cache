@@ -18,6 +18,29 @@ use super::{Entry, LookupTable};
 
 /// A collection that if limited to a certain capacity will evict based on the
 /// least recently used value.
+///
+/// # Examples
+///
+/// ```
+/// use lfu_cache::LfuMap;
+///
+/// let mut cache = LfuMap::with_capacity(2);
+///
+/// // Fill up the cache.
+/// cache.insert("foo", 3);
+/// cache.insert("bar", 4);
+///
+/// // Insert returns the evicted value, if a value was evicted.
+/// let maybe_evicted = cache.insert("baz", 5);
+///
+/// // In the case of a tie, the most recently added value is evicted.
+/// assert!(cache.get(&"bar").is_none());
+/// assert_eq!(maybe_evicted, Some(4));
+///
+/// cache.get(&"baz");
+/// // Otherwise, the least frequently value is evicted.
+/// assert_eq!(cache.pop_lfu(), Some(3));
+/// ```
 // Note that Default is _not_ implemented. This is intentional, as most people
 // likely don't want an unbounded LFU cache by default.
 pub struct Map<Key, Value> {
@@ -46,24 +69,12 @@ impl<Key, Value> Map<Key, Value> {
     /// evicted. If there are multiple least frequently used items in this
     /// collection, the most recently added item is evicted.
     ///
+    /// # Examples
+    ///
     /// ```
-    /// # use lfu_cache::LfuMap;
-    /// let mut cache = LfuMap::with_capacity(2);
+    /// use lfu_cache::LfuMap;
     ///
-    /// // Fill up the cache.
-    /// cache.insert("foo", 3);
-    /// cache.insert("bar", 4);
-    ///
-    /// // Insert returns the evicted value, if a value was evicted.
-    /// let maybe_evicted = cache.insert("baz", 5);
-    ///
-    /// // In the case of a tie, the most recently added value is evicted.
-    /// assert!(cache.get(&"bar").is_none());
-    /// assert_eq!(maybe_evicted, Some(4));
-    ///
-    /// cache.get(&"baz");
-    /// // Otherwise, the least frequently value is evicted.
-    /// assert_eq!(cache.pop_lfu(), Some(3));
+    /// let cache: LfuMap<usize, usize> = LfuMap::with_capacity(2);
     /// ```
     #[inline]
     #[must_use]
@@ -87,6 +98,14 @@ impl<Key, Value> Map<Key, Value> {
     /// Construction of this cache will not heap allocate.
     ///
     /// [`pop_lfu`]: Self::pop_lfu
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let cache: LfuMap<usize, usize> = LfuMap::unbounded();
+    /// ```
     #[inline]
     #[must_use]
     pub fn unbounded() -> Self {
@@ -94,6 +113,17 @@ impl<Key, Value> Map<Key, Value> {
     }
 
     /// Clears the cache, returning the iterator of the previous cached values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache = LfuMap::from_iter([(1, 2), (3, 4)]);
+    /// cache.clear();
+    /// assert!(cache.is_empty());
+    /// ```
+    ///
     pub fn clear(&mut self) {
         let mut to_return = Self::with_capacity(self.capacity.map_or(0, NonZeroUsize::get));
         std::mem::swap(&mut to_return, self);
@@ -101,6 +131,18 @@ impl<Key, Value> Map<Key, Value> {
 
     /// Peeks at the next value to be evicted, if there is one. This will not
     /// increment the access counter for that value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache = LfuMap::from_iter([(1, 2), (3, 4)]);
+    ///
+    /// cache.get(&1);
+    ///
+    /// assert_eq!(cache.peek_lfu(), Some(&4));
+    /// ```
     #[inline]
     #[must_use]
     pub fn peek_lfu(&self) -> Option<&Value> {
@@ -108,6 +150,20 @@ impl<Key, Value> Map<Key, Value> {
     }
 
     /// Returns the current capacity of the cache.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::num::NonZeroUsize;
+    ///
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let cache: LfuMap<usize, usize> = LfuMap::with_capacity(10);
+    /// assert_eq!(cache.capacity(), NonZeroUsize::new(10));
+    ///
+    /// let unbounded_cache: LfuMap<usize, usize> = LfuMap::unbounded();
+    /// assert_eq!(unbounded_cache.capacity(), None);
+    /// ```
     #[inline]
     #[must_use]
     pub const fn capacity(&self) -> Option<NonZeroUsize> {
@@ -116,6 +172,18 @@ impl<Key, Value> Map<Key, Value> {
 
     /// Returns the current number of items in the cache. This is a constant
     /// time operation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache: LfuMap<usize, usize> = LfuMap::with_capacity(10);
+    /// assert_eq!(cache.len(), 0);
+    ///
+    /// cache.insert(1, 2);
+    /// assert_eq!(cache.len(), 1);
+    /// ```
     #[inline]
     #[must_use]
     pub const fn len(&self) -> usize {
@@ -123,6 +191,18 @@ impl<Key, Value> Map<Key, Value> {
     }
 
     /// Returns if the cache contains no elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache: LfuMap<usize, usize> = LfuMap::with_capacity(10);
+    /// assert_eq!(cache.is_empty(), true);
+    ///
+    /// cache.insert(1, 2);
+    /// assert_eq!(cache.is_empty(), false);
+    /// ```
     #[inline]
     #[must_use]
     pub const fn is_empty(&self) -> bool {
@@ -130,6 +210,17 @@ impl<Key, Value> Map<Key, Value> {
     }
 
     /// Returns if the cache is unbounded.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let cache: LfuMap<usize, usize> = LfuMap::with_capacity(10);
+    /// assert_eq!(cache.is_unbounded(), false);
+    ///
+    /// let unbounded_cache: LfuMap<usize, usize> = LfuMap::unbounded();
+    /// assert_eq!(unbounded_cache.is_unbounded(), true);
     #[inline]
     #[must_use]
     pub const fn is_unbounded(&self) -> bool {

@@ -4,7 +4,7 @@ use super::Node;
 
 /// An iterator over the [`Node`]s in the frequency list.
 ///
-/// This is created by [`FrequencyList::iter`].
+/// This is created by [`super::FrequencyList::iter`].
 // Note that this internally contains a reference to a Node rather than a
 // pointer to one. This is intentional to associate the lifetime of Iter to the
 // derived frequency list.
