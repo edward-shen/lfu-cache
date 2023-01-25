@@ -13,7 +13,7 @@ impl<Key: Debug, Value> Debug for LookupTable<Key, Value> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut dbg = f.debug_struct("LookupMap");
         for (key, value) in &self.0 {
-            dbg.field(&format!("{:?}", key), &unsafe {
+            dbg.field(&format!("{key:?}"), &unsafe {
                 value.as_ref().owner.as_ref().frequency
             });
         }
