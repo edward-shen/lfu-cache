@@ -1,8 +1,8 @@
 use std::borrow::Borrow;
-use std::collections::hash_map;
+use std::collections::hash_map::{self, RandomState};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 use std::num::NonZeroUsize;
@@ -44,15 +44,15 @@ use super::{OccupiedEntry, VacantEntry};
 /// ```
 // Note that Default is _not_ implemented. This is intentional, as most people
 // likely don't want an unbounded LFU cache by default.
-pub struct Map<Key, Value> {
-    lookup: LookupTable<Key, Value>,
+pub struct Map<Key, Value, State = RandomState> {
+    lookup: LookupTable<Key, Value, State>,
     freq_list: FrequencyList<Key, Value>,
     capacity: Option<NonZeroUsize>,
     len: usize,
 }
 
-unsafe impl<Key: Send, Value: Send> Send for Map<Key, Value> {}
-unsafe impl<Key: Sync, Value: Sync> Sync for Map<Key, Value> {}
+unsafe impl<Key: Send, Value: Send, State> Send for Map<Key, Value, State> {}
+unsafe impl<Key: Sync, Value: Sync, State> Sync for Map<Key, Value, State> {}
 
 impl<Key: Eq + Hash, Value: PartialEq> PartialEq for Map<Key, Value> {
     fn eq(&self, other: &Self) -> bool {
@@ -64,7 +64,7 @@ impl<Key: Eq + Hash, Value: PartialEq> PartialEq for Map<Key, Value> {
 }
 
 impl<Key, Value> Map<Key, Value> {
-    /// Creates a LFU cache with at least the specified capacity.
+    /// Creates an empty LFU cache with at least the specified capacity.
     ///
     /// When the capacity is reached, then the least frequently used item is
     /// evicted. If there are multiple least frequently used items in this
@@ -75,7 +75,8 @@ impl<Key, Value> Map<Key, Value> {
     /// ```
     /// use lfu_cache::LfuMap;
     ///
-    /// let cache: LfuMap<usize, usize> = LfuMap::with_capacity(2);
+    /// let mut cache: LfuMap<usize, usize> = LfuMap::with_capacity(2);
+    /// cache.insert(1, 2);
     /// ```
     #[inline]
     #[must_use]
@@ -105,15 +106,80 @@ impl<Key, Value> Map<Key, Value> {
     /// ```
     /// use lfu_cache::LfuMap;
     ///
-    /// let cache: LfuMap<usize, usize> = LfuMap::unbounded();
+    /// let mut cache: LfuMap<usize, usize> = LfuMap::unbounded();
+    /// cache.insert(1, 2);
     /// ```
     #[inline]
     #[must_use]
     pub fn unbounded() -> Self {
         Self::with_capacity(0)
     }
+}
 
-    /// Clears the cache, returning the iterator of the previous cached values.
+impl<Key, Value, State> Map<Key, Value, State> {
+    /// Creates an empty LFU cache with at least the specified capacity, using
+    /// `hasher` to hash the keys.
+    ///
+    /// Warning: `hasher` is normally randomly generated, and is designed to
+    /// allow `LfuMap`s to be resistant to attacks that cause many collisions
+    /// and very poor performance. Setting it manually using this function can
+    /// expose a Denial of Service attack vector.
+    ///
+    /// The `hasher` passed should implement the [`BuildHasher`] trait for the
+    /// `LfuMap` to be useful, see its documentation for details.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::hash_map::RandomState;
+    ///
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let s = RandomState::new();
+    /// let mut map = LfuMap::with_capacity_and_hasher(10, s);
+    /// map.insert(1, 2);
+    /// ```
+    pub fn with_capacity_and_hasher(capacity: usize, hasher: State) -> Self {
+        Self {
+            lookup: LookupTable(HashMap::with_capacity_and_hasher(capacity, hasher)),
+            freq_list: FrequencyList::new(),
+            capacity: NonZeroUsize::new(capacity),
+            len: 0,
+        }
+    }
+
+    /// Creates an empty unbounded LFU cache, using `hasher` to hash the keys.
+    ///
+    /// Warning: `hasher` is normally randomly generated, and is designed to
+    /// allow `LfuMap`s to be resistant to attacks that cause many collisions
+    /// and very poor performance. Setting it manually using this function can
+    /// expose a Denial of Service attack vector.
+    ///
+    /// The `hasher` passed should implement the [`BuildHasher`] trait for the
+    /// `LfuMap` to be useful, see its documentation for details.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::hash_map::RandomState;
+    ///
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let s = RandomState::new();
+    /// let mut map = LfuMap::unbounded_with_hasher(10, s);
+    /// map.insert(1, 2);
+    /// ```
+    pub fn unbounded_with_hasher(capacity: usize, hasher: State) -> Self {
+        Self {
+            lookup: LookupTable(HashMap::with_capacity_and_hasher(0, hasher)),
+            freq_list: FrequencyList::new(),
+            capacity: NonZeroUsize::new(capacity),
+            len: 0,
+        }
+    }
+
+    /// Clears the map, removing all key-value pairs. Some allocated memory is
+    /// kept for reuse.
     ///
     /// # Examples
     ///
@@ -126,8 +192,9 @@ impl<Key, Value> Map<Key, Value> {
     /// ```
     ///
     pub fn clear(&mut self) {
-        let mut to_return = Self::with_capacity(self.capacity.map_or(0, NonZeroUsize::get));
-        std::mem::swap(&mut to_return, self);
+        self.len = 0;
+        self.lookup.clear();
+        self.freq_list = FrequencyList::new();
     }
 
     /// Peeks at the next value to be evicted, if there is one. This will not
@@ -311,7 +378,7 @@ impl<Key, Value> Map<Key, Value> {
     }
 }
 
-impl<Key: Eq + Hash, Value> Map<Key, Value> {
+impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
     /// Inserts a key-value pair into the cache.
     ///
     /// If the key already exists, the value is updated without updating the
@@ -322,6 +389,15 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
     /// capacity of the cache. If an entry was evicted, the old value is
     /// returned. If the cache did not need to evict an entry or was unbounded,
     /// this returns [`None`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache = LfuMap::with_capacity(10);
+    /// cache.insert(1, 2);
+    /// ```
     // TODO: return a (Key, Value, Freq)
     #[inline]
     pub fn insert(&mut self, key: Key, value: Value) -> Option<Value> {

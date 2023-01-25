@@ -1,3 +1,4 @@
+use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
@@ -6,7 +7,17 @@ use std::rc::Rc;
 
 use crate::lfu::Entry;
 
-pub struct LookupTable<Key, Value>(pub(crate) HashMap<Rc<Key>, NonNull<Entry<Key, Value>>>);
+pub struct LookupTable<Key, Value, State = RandomState>(
+    pub(crate) HashMap<Rc<Key>, NonNull<Entry<Key, Value>>, State>,
+);
+
+impl<Key, Value, State> LookupTable<Key, Value, State> {
+    pub fn clear(&mut self) {
+        for (_, v) in self.0.drain() {
+            unsafe { Box::from_raw(v.as_ptr()) };
+        }
+    }
+}
 
 #[cfg(not(tarpaulin_include))]
 impl<Key: Debug, Value> Debug for LookupTable<Key, Value> {
@@ -30,10 +41,8 @@ where
     }
 }
 
-impl<Key, Value> Drop for LookupTable<Key, Value> {
+impl<Key, Value, State> Drop for LookupTable<Key, Value, State> {
     fn drop(&mut self) {
-        for (_, v) in self.0.drain() {
-            unsafe { Box::from_raw(v.as_ptr()) };
-        }
+        self.clear();
     }
 }
