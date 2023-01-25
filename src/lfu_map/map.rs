@@ -221,6 +221,7 @@ impl<Key, Value> Map<Key, Value> {
     ///
     /// let unbounded_cache: LfuMap<usize, usize> = LfuMap::unbounded();
     /// assert_eq!(unbounded_cache.is_unbounded(), true);
+    /// ```
     #[inline]
     #[must_use]
     pub const fn is_unbounded(&self) -> bool {
@@ -229,6 +230,17 @@ impl<Key, Value> Map<Key, Value> {
 
     /// Returns the frequencies that this cache has. This is a linear time
     /// operation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache: LfuMap<usize, usize> = LfuMap::from_iter([(1, 2), (3, 4)]);
+    /// cache.get(&1);
+    /// let frequencies: Vec<_> = cache.frequencies().collect();
+    /// assert_eq!(frequencies, vec![0, 1]);
+    /// ```
     #[inline]
     #[must_use]
     pub fn frequencies(&self) -> Frequencies<Key, Value> {
@@ -236,6 +248,20 @@ impl<Key, Value> Map<Key, Value> {
     }
 
     /// Returns an iterator over the keys of the LFU cache in any order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache: LfuMap<usize, usize> = LfuMap::from_iter([(1, 2), (3, 4)]);
+    /// let mut keys: Vec<_> = cache.keys().collect();
+    ///
+    /// // Since we're not guaranteed to have keys in order, lets sort them.
+    /// keys.sort_unstable();
+    ///
+    /// assert_eq!(keys, vec![&1, &3]);
+    /// ```
     #[inline]
     pub fn keys(&self) -> Keys<Key, Value> {
         Keys(self.lookup.0.keys())
@@ -243,6 +269,20 @@ impl<Key, Value> Map<Key, Value> {
 
     /// Returns an iterator over the values of the LFU cache in any order. Note
     /// that this does **not** increment the count for any of the values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache: LfuMap<usize, usize> = LfuMap::from_iter([(1, 2), (3, 4)]);
+    /// let mut values: Vec<_> = cache.peek_values().collect();
+    ///
+    /// // Since we're not guaranteed to have values in order, lets sort them.
+    /// values.sort_unstable();
+    ///
+    /// assert_eq!(values, vec![&2, &4]);
+    /// ```
     #[inline]
     pub fn peek_values(&self) -> PeekValues<Key, Value> {
         PeekValues(self.lookup.0.values())
@@ -251,6 +291,19 @@ impl<Key, Value> Map<Key, Value> {
     /// Returns an iterator over the keys and values of the LFU cache in any
     /// order. Note that this does **not** increment the count for any of the
     /// values.
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache: LfuMap<usize, usize> = LfuMap::from_iter([(1, 2), (3, 4)]);
+    /// let mut iter: Vec<_> = cache.peek_iter().collect();
+    ///
+    /// // Since we're not guaranteed to have iter in order, lets sort them.
+    /// iter.sort_unstable();
+    ///
+    /// assert_eq!(iter, vec![(&1, &2), (&3, &4)]);
+    /// ```
     #[inline]
     pub fn peek_iter(&self) -> PeekIter<Key, Value> {
         PeekIter(self.lookup.0.iter())
