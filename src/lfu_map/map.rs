@@ -351,8 +351,11 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
         //   - Obtain the _moved_ key pointer from the raw entry API
         //   - Use this key pointer as the pointer for the entry, and overwrite
         //     the dangling pointer with an actual value.
-        self.lookup.0.insert(Rc::clone(&key), NonNull::dangling());
-        let v = self.lookup.0.get_mut(&key).unwrap();
+        let v = self
+            .lookup
+            .0
+            .entry(Rc::clone(&key))
+            .or_insert_with(NonNull::dangling);
         *v = self.freq_list.insert(key, value);
 
         self.len += 1;
