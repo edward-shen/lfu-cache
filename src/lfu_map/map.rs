@@ -13,8 +13,8 @@ use crate::frequency_list::FrequencyList;
 use crate::frequency_list::WithFrequency;
 use crate::lfu_map::IntoIter;
 
-use super::Keys;
 use super::{Entry, LookupTable};
+use super::{Keys, PeekValues};
 use super::{OccupiedEntry, VacantEntry};
 
 /// A collection that if limited to a certain capacity will evict based on the
@@ -246,11 +246,8 @@ impl<Key, Value> Map<Key, Value> {
     /// Returns an iterator over the values of the LFU cache in any order. Note
     /// that this does **not** increment the count for any of the values.
     #[inline]
-    pub fn peek_values(&self) -> impl Iterator<Item = &Value> + FusedIterator + '_ {
-        self.lookup
-            .0
-            .values()
-            .map(|value| &unsafe { value.as_ref() }.value)
+    pub fn peek_values(&self) -> PeekValues<Key, Value> {
+        PeekValues(self.lookup.0.values())
     }
 
     /// Returns an iterator over the keys and values of the LFU cache in any
