@@ -282,7 +282,7 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
     }
 
     /// Like [`Self::insert`], but with an shared key instead.
-    pub(crate) fn insert_rc(&mut self, key: Rc<Key>, value: Value) -> Option<Value> {
+    fn insert_rc(&mut self, key: Rc<Key>, value: Value) -> Option<Value> {
         let mut evicted = self.remove(&key);
 
         if let Some(capacity) = self.capacity {
