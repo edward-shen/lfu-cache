@@ -456,6 +456,7 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
     }
 
     /// Like `get_mut`, but also returns the Rc as well.
+    // NOTE: Do _NOT_ make this pub! Rc<Key> must never be cloned or we violate invariants!
     pub(crate) fn get_rc_key_value_mut<Q>(&mut self, key: &Q) -> Option<(Rc<Key>, &mut Value)>
     where
         Q: Hash + Eq + ?Sized,
@@ -525,6 +526,22 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
     /// the least frequently used item when the capacity is reached.
     ///
     /// [`pop_lfu`]: Self::pop_lfu
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::num::NonZeroUsize;
+    ///
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut map: LfuMap<usize, usize> = LfuMap::with_capacity(10);
+    ///
+    /// map.set_capacity(4);
+    /// assert_eq!(map.capacity(), NonZeroUsize::new(4));
+    ///
+    /// map.set_capacity(0);
+    /// assert_eq!(map.is_unbounded(), true);
+    /// ```
     pub fn set_capacity(&mut self, new_capacity: usize) {
         self.capacity = NonZeroUsize::new(new_capacity);
 
@@ -537,6 +554,24 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
 
     /// Sets the capacity to the amount of objects currently in the cache. If
     /// no items were in the cache, the cache becomes unbounded.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::num::NonZeroUsize;
+    ///
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut map: LfuMap<usize, usize> = LfuMap::with_capacity(10);
+    ///
+    /// map.insert(1, 2);
+    /// map.shrink_to_fit();
+    /// assert_eq!(map.capacity(), NonZeroUsize::new(1));
+    ///
+    /// map.pop_lfu();
+    /// map.shrink_to_fit();
+    /// assert_eq!(map.is_unbounded(), true);
+    /// ```
     #[inline]
     pub fn shrink_to_fit(&mut self) {
         self.set_capacity(self.len);
