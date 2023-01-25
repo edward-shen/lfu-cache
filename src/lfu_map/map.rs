@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -320,7 +321,7 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
     /// If the key did not already exist, then what is returned depends on the
     /// capacity of the cache. If an entry was evicted, the old value is
     /// returned. If the cache did not need to evict an entry or was unbounded,
-    /// this returns [None].
+    /// this returns [`None`].
     // TODO: return a (Key, Value, Freq)
     #[inline]
     pub fn insert(&mut self, key: Key, value: Value) -> Option<Value> {
@@ -381,17 +382,17 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
     }
 
     /// Evicts the least frequently used value and returns it. If the cache is
-    /// empty, then this returns None. If there are multiple items that have an
-    /// equal access count, then the most recently added value is evicted.
+    /// empty, then this returns [`None`]. If there are multiple items that have
+    /// an equal access count, then the most recently added value is evicted.
     #[inline]
     pub fn pop_lfu(&mut self) -> Option<Value> {
         self.pop_lfu_key_value_frequency().map(|(_, v, _)| v)
     }
 
     /// Evicts the least frequently used key-value pair and returns it. If the
-    /// cache is empty, then this returns None. If there are multiple items that
-    /// have an equal access count, then the most recently added key-value pair
-    /// is evicted.
+    /// cache is empty, then this returns [`None`]. If there are multiple items
+    /// that have an equal access count, then the most recently added key-value
+    /// pair is evicted.
     #[inline]
     pub fn pop_lfu_key_value(&mut self) -> Option<(Key, Value)> {
         self.pop_lfu_key_value_frequency().map(|(k, v, _)| (k, v))
@@ -399,8 +400,8 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
 
     /// Evicts the least frequently used value and returns it, the key it was
     /// inserted under, and the frequency it had. If the cache is empty, then
-    /// this returns None. If there are multiple items that have an equal access
-    /// count, then the most recently added key-value pair is evicted.
+    /// this returns [`None`]. If there are multiple items that have an equal
+    /// access count, then the most recently added key-value pair is evicted.
     #[inline]
     pub fn pop_lfu_key_value_frequency(&mut self) -> Option<(Key, Value, usize)> {
         self.freq_list
@@ -429,7 +430,11 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
     /// Gets a value and increments the internal frequency counter of that
     /// value, if it exists.
     #[inline]
-    pub fn get(&mut self, key: &Key) -> Option<&Value> {
+    pub fn get<Q>(&mut self, key: &Q) -> Option<&Value>
+    where
+        Q: Hash + Eq + ?Sized,
+        Rc<Key>: Borrow<Q>,
+    {
         let entry = self.lookup.0.get_mut(key)?;
         self.freq_list.update(*entry);
         // SAFETY: This is fine because self is uniquely borrowed
@@ -439,12 +444,20 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
     /// Gets a mutable value and increments the internal frequency counter of
     /// that value, if it exists.
     #[inline]
-    pub fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut Value>
+    where
+        Q: Hash + Eq + ?Sized,
+        Rc<Key>: Borrow<Q>,
+    {
         self.get_rc_key_value_mut(key).map(|(_, v)| v)
     }
 
     /// Like `get_mut`, but also returns the Rc as well.
-    pub(crate) fn get_rc_key_value_mut(&mut self, key: &Key) -> Option<(Rc<Key>, &mut Value)> {
+    pub(crate) fn get_rc_key_value_mut<Q>(&mut self, key: &Q) -> Option<(Rc<Key>, &mut Value)>
+    where
+        Q: Hash + Eq + ?Sized,
+        Rc<Key>: Borrow<Q>,
+    {
         let entry = self.lookup.0.get_mut(key)?;
         self.freq_list.update(*entry);
         // SAFETY: This is fine because self is uniquely borrowed
@@ -453,8 +466,23 @@ impl<Key: Eq + Hash, Value> Map<Key, Value> {
     }
 
     /// Removes a value from the cache by key, if it exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut map = LfuMap::from_iter([(1, 2), (3, 4)]);
+    ///
+    /// assert_eq!(map.remove(&1), Some(2));
+    /// assert_eq!(map.get(&1).is_some(), false);
+    /// ```
     #[inline]
-    pub fn remove(&mut self, key: &Key) -> Option<Value> {
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<Value>
+    where
+        Q: Hash + Eq + ?Sized,
+        Rc<Key>: Borrow<Q>,
+    {
         self.lookup.0.remove(key).map(|node| {
             // SAFETY: We have unique access to self. At this point, we've
             // removed the entry from the lookup map but haven't removed it from
