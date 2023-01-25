@@ -13,8 +13,9 @@ use crate::frequency_list::FrequencyList;
 use crate::frequency_list::WithFrequency;
 use crate::lfu_map::IntoIter;
 
-use super::entry::{OccupiedEntry, VacantEntry};
+use super::Keys;
 use super::{Entry, LookupTable};
+use super::{OccupiedEntry, VacantEntry};
 
 /// A collection that if limited to a certain capacity will evict based on the
 /// least recently used value.
@@ -238,8 +239,8 @@ impl<Key, Value> Map<Key, Value> {
 
     /// Returns an iterator over the keys of the LFU cache in any order.
     #[inline]
-    pub fn keys(&self) -> impl Iterator<Item = &Key> + FusedIterator + '_ {
-        self.lookup.0.keys().map(Borrow::borrow)
+    pub fn keys(&self) -> Keys<Key, Value> {
+        Keys(self.lookup.0.keys())
     }
 
     /// Returns an iterator over the values of the LFU cache in any order. Note
