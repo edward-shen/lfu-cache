@@ -1,10 +1,9 @@
-use std::borrow::Borrow;
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 use std::hint::unreachable_unchecked;
-use std::iter::{FromIterator, FusedIterator};
+use std::iter::FromIterator;
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
