@@ -1,6 +1,5 @@
 use std::borrow::Borrow;
 use std::collections::hash_map::{self, RandomState};
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::{BuildHasher, Hash};
 use std::hint::unreachable_unchecked;
@@ -82,7 +81,7 @@ impl<Key, Value> Map<Key, Value> {
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            lookup: LookupTable(HashMap::with_capacity(capacity)),
+            lookup: LookupTable::with_capacity(capacity),
             freq_list: FrequencyList::new(),
             capacity: NonZeroUsize::new(capacity),
             len: 0,
@@ -141,7 +140,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// ```
     pub fn with_capacity_and_hasher(capacity: usize, hasher: State) -> Self {
         Self {
-            lookup: LookupTable(HashMap::with_capacity_and_hasher(capacity, hasher)),
+            lookup: LookupTable::with_capacity_and_hasher(capacity, hasher),
             freq_list: FrequencyList::new(),
             capacity: NonZeroUsize::new(capacity),
             len: 0,
@@ -171,7 +170,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// ```
     pub fn unbounded_with_hasher(capacity: usize, hasher: State) -> Self {
         Self {
-            lookup: LookupTable(HashMap::with_capacity_and_hasher(0, hasher)),
+            lookup: LookupTable::with_capacity_and_hasher(0, hasher),
             freq_list: FrequencyList::new(),
             capacity: NonZeroUsize::new(capacity),
             len: 0,
@@ -332,7 +331,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// ```
     #[inline]
     pub fn keys(&self) -> Keys<Key, Value> {
-        Keys(self.lookup.0.keys())
+        Keys(self.lookup.keys())
     }
 
     /// Returns an iterator over the values of the LFU cache in any order. Note
@@ -353,7 +352,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// ```
     #[inline]
     pub fn peek_values(&self) -> PeekValues<Key, Value> {
-        PeekValues(self.lookup.0.values())
+        PeekValues(self.lookup.values())
     }
 
     /// Returns an iterator over the keys and values of the LFU cache in any
@@ -374,7 +373,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// ```
     #[inline]
     pub fn peek_iter(&self) -> PeekIter<Key, Value> {
-        PeekIter(self.lookup.0.iter())
+        PeekIter(self.lookup.iter())
     }
 }
 
@@ -429,7 +428,6 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
         //     the dangling pointer with an actual value.
         let v = self
             .lookup
-            .0
             .entry(Rc::clone(&key))
             .or_insert_with(NonNull::dangling);
         *v = self.freq_list.insert(key, value);
@@ -445,7 +443,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
     #[inline]
     pub fn entry(&mut self, key: Key) -> Entry<'_, Key, Value> {
         let key = Rc::new(key);
-        match self.lookup.0.entry(Rc::clone(&key)) {
+        match self.lookup.entry(Rc::clone(&key)) {
             hash_map::Entry::Occupied(mut entry) => {
                 self.freq_list.update(*entry.get_mut());
                 Entry::Occupied(OccupiedEntry::new(entry, &mut self.len))
@@ -488,7 +486,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
             .map(|WithFrequency(freq, detached)| {
                 // SAFETY: This is fine since self is uniquely borrowed.
                 let key = detached.key.as_ref();
-                self.lookup.0.remove(key);
+                self.lookup.remove(key);
                 self.len -= 1;
 
                 // SAFETY: entry_ptr is guaranteed to be a live reference and is
@@ -522,10 +520,9 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
         Q: Hash + Eq + ?Sized,
         Rc<Key>: Borrow<Q>,
     {
-        let entry = self.lookup.0.get_mut(key)?;
-        self.freq_list.update(*entry);
-        // SAFETY: This is fine because self is uniquely borrowed
-        Some(&unsafe { entry.as_ref() }.value)
+        self.lookup
+            .get_mut(key, &mut self.freq_list)
+            .map(|entry| &entry.value)
     }
 
     /// Gets a mutable value and increments the internal frequency counter of
@@ -557,10 +554,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
         Q: Hash + Eq + ?Sized,
         Rc<Key>: Borrow<Q>,
     {
-        let entry = self.lookup.0.get_mut(key)?;
-        self.freq_list.update(*entry);
-        // SAFETY: This is fine because self is uniquely borrowed
-        let entry = unsafe { entry.as_mut() };
+        let entry = self.lookup.get_mut(key, &mut self.freq_list)?;
         Some((Rc::clone(&entry.key), &mut entry.value))
     }
 
@@ -582,7 +576,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
         Q: Hash + Eq + ?Sized,
         Rc<Key>: Borrow<Q>,
     {
-        self.lookup.0.remove(key).map(|node| {
+        self.lookup.remove(key).map(|node| {
             // SAFETY: We have unique access to self. At this point, we've
             // removed the entry from the lookup map but haven't removed it from
             // the frequency data structure, so we need to clean it up there
@@ -824,7 +818,7 @@ mod pop {
         }
 
         for i in 0..100 {
-            assert_eq!(cache.lookup.0.len(), 100 - i);
+            assert_eq!(cache.lookup.len(), 100 - i);
             assert_eq!(cache.pop_lfu(), Some(200 - i - 1));
         }
     }

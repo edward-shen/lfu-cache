@@ -1,15 +1,93 @@
-use std::collections::hash_map::RandomState;
+use std::borrow::Borrow;
+use std::collections::hash_map::{Entry as HashMapEntry, Iter, Keys, RandomState, Values};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 use std::ptr::NonNull;
 use std::rc::Rc;
 
+use crate::frequency_list::FrequencyList;
 use crate::lfu::Entry;
 
+/// Like a [`HashMap`], but specialized for our needs.
+///
+/// Note that only a mutable access is provided
 pub struct LookupTable<Key, Value, State = RandomState>(
-    pub(crate) HashMap<Rc<Key>, NonNull<Entry<Key, Value>>, State>,
+    HashMap<Rc<Key>, NonNull<Entry<Key, Value>>, State>,
 );
+
+impl<Key, Value> LookupTable<Key, Value, RandomState> {
+    pub(crate) fn with_capacity(size: usize) -> Self {
+        Self(HashMap::with_capacity(size))
+    }
+}
+
+impl<Key, Value, State> LookupTable<Key, Value, State> {
+    #[inline]
+    pub(crate) fn with_capacity_and_hasher(size: usize, hasher: State) -> Self {
+        Self(HashMap::with_capacity_and_hasher(size, hasher))
+    }
+
+    #[inline]
+    pub(crate) fn keys(&self) -> Keys<Rc<Key>, NonNull<Entry<Key, Value>>> {
+        self.0.keys()
+    }
+
+    #[inline]
+    pub(crate) fn values(&self) -> Values<Rc<Key>, NonNull<Entry<Key, Value>>> {
+        self.0.values()
+    }
+
+    #[inline]
+    pub(crate) fn iter(&self) -> Iter<Rc<Key>, NonNull<Entry<Key, Value>>> {
+        self.0.iter()
+    }
+
+    #[cfg(test)]
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<Key: Eq + Hash, Value, State: BuildHasher> LookupTable<Key, Value, State> {
+    /// Returns a mutable reference to the entry, if one exists.
+    ///
+    /// Accepts a frequency list to update.
+    pub(crate) fn get_mut<Q>(
+        &mut self,
+        key: &Q,
+        freq_list: &mut FrequencyList<Key, Value>,
+    ) -> Option<&mut Entry<Key, Value>>
+    where
+        Rc<Key>: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        let ptr = self.0.get_mut(key)?;
+        freq_list.update(*ptr);
+
+        // SAFETY: We have exclusive access to this ptr since self is
+        // exclusively borrowed
+        Some(unsafe { ptr.as_mut() })
+    }
+
+    #[inline]
+    pub(crate) fn remove<Q>(&mut self, key: &Q) -> Option<NonNull<Entry<Key, Value>>>
+    where
+        Rc<Key>: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        self.0.remove(key)
+    }
+
+    #[inline]
+    pub(crate) fn entry(
+        &mut self,
+        key: Rc<Key>,
+    ) -> HashMapEntry<Rc<Key>, NonNull<Entry<Key, Value>>> {
+        self.0.entry(key)
+    }
+}
 
 impl<Key, Value, State> LookupTable<Key, Value, State> {
     pub fn clear(&mut self) {
