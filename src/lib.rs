@@ -11,9 +11,8 @@
 //! Performance of this LFU cache is bounded by constant time operations of a
 //! typical unsafe linked list on your platform. For most users, this is an
 //! implementation detail and can be ignored. However, for high throughput
-//! clients, this should be noted as performance might not be as this collection
-//! can not make better use of the CPU cache in comparison to array-based
-//! containers.
+//! clients, performance may be lower as this may cause more CPU cache misses
+//! in comparison to array-based containers.
 
 mod frequency_list;
 mod lfu;
