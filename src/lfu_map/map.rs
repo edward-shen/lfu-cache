@@ -496,11 +496,8 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
                 // As a result, at this point, we're guaranteed that we have the
                 // only reference of entry_ptr.
 
-                // false positive, lint doesn't respect match guard.
-                #[allow(clippy::option_if_let_else)]
-                let key = match Rc::try_unwrap(detached.key) {
-                    Ok(k) => k,
-                    Err(_) => unsafe { unreachable_unchecked() },
+                let Ok(key) = Rc::try_unwrap(detached.key) else {
+                    unsafe { unreachable_unchecked() }
                 };
                 (key, detached.value, freq)
             })
