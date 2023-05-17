@@ -15,7 +15,7 @@ use crate::{iter::LfuCacheIter, Entry};
 /// expired entries is O(log n).
 // This is re-exported at the crate root, so this lint can be safely ignored.
 #[allow(clippy::module_name_repetitions)]
-#[derive(Eq)]
+#[derive(Debug, Eq)]
 pub struct TimedLfuCache<Key: Hash + Eq, Value> {
     cache: LfuCache<Key, Value>,
     expiration: Option<Duration>,
@@ -320,7 +320,7 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
 /// on the provided key. This allows us to fetch key values by the key only,
 /// but allows us to have an ordered set of elements based on when it was added
 /// for quick eviction lookup.
-#[derive(Eq)]
+#[derive(Debug, Eq)]
 struct ExpirationSetEntry<Key: Hash>(Rc<Key>, Instant);
 
 impl<Key: PartialEq + Hash> PartialEq for ExpirationSetEntry<Key> {
