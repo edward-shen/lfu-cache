@@ -248,6 +248,14 @@ impl<Key: Hash + Eq, T> FrequencyList<Key, T> {
         self.head.and_then(|node| unsafe { node.as_ref() }.peek())
     }
 
+    /// Returns the key of the most recently added, lowest frequently accessed
+    /// item if it exists.
+    #[inline]
+    pub(super) fn peek_lfu_key(&self) -> Option<&Key> {
+        self.head
+            .and_then(|node| unsafe { node.as_ref() }.peek_key())
+    }
+
     /// Returns an iterator of all frequencies in the list.
     pub(super) fn frequencies(&self) -> impl Iterator<Item = usize> + FusedIterator + '_ {
         self.iter().map(|node| node.frequency)
