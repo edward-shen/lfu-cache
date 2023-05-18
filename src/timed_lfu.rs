@@ -191,6 +191,15 @@ impl<Key: Hash + Eq, Value> TimedLfuMap<Key, Value> {
         self.cache.clear()
     }
 
+    /// Peeks at the key of the next value to be evicted, if there is one. This
+    /// will not increment the access counter for that value, or evict expired
+    /// entries.
+    #[inline]
+    #[must_use]
+    pub fn peek_lfu_key(&self) -> Option<&Key> {
+        self.cache.peek_lfu_key()
+    }
+
     /// Peeks at the next value to be evicted, if there is one. This will not
     /// increment the access counter for that value, or evict expired entries.
     #[inline]

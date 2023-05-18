@@ -196,6 +196,26 @@ impl<Key, Value, State> Map<Key, Value, State> {
         self.freq_list = FrequencyList::new();
     }
 
+    /// Peeks at the key of next value to be evicted, if there is one. This will
+    /// not increment the access counter for that value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lfu_cache::LfuMap;
+    ///
+    /// let mut cache = LfuMap::from_iter([(1, 2), (3, 4)]);
+    ///
+    /// cache.get(&1);
+    ///
+    /// assert_eq!(cache.peek_lfu_key(), Some(&3));
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn peek_lfu_key(&self) -> Option<&Key> {
+        self.freq_list.peek_lfu_key()
+    }
+
     /// Peeks at the next value to be evicted, if there is one. This will not
     /// increment the access counter for that value.
     ///

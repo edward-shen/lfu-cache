@@ -244,6 +244,14 @@ impl<Key, T> FrequencyList<Key, T> {
         item
     }
 
+    /// Returns the key of the most recently added, lowest frequently accessed
+    /// item if it exists.
+    #[inline]
+    pub(crate) fn peek_lfu_key(&self) -> Option<&Key> {
+        self.head
+            .and_then(|node| unsafe { node.as_ref() }.peek_key())
+    }
+
     /// Returns the most recently added, lowest frequently accessed item if it
     /// exists.
     #[inline]
