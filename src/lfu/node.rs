@@ -135,6 +135,10 @@ impl<Key: Hash + Eq, T> Node<Key, T> {
         Some(&unsafe { self.elements?.as_ref() }.value)
     }
 
+    pub(super) fn peek_key(&self) -> Option<&Key> {
+        Some(&unsafe { self.elements?.as_ref() }.key)
+    }
+
     pub(super) fn len(&self) -> usize {
         let mut count = 0;
         let mut head = self.elements;
@@ -363,7 +367,9 @@ mod node {
 
     #[test]
     fn peek_empty() {
-        assert!(init_node().peek().is_none());
+        let node = init_node();
+        assert!(node.peek().is_none());
+        assert!(node.peek_key().is_none());
     }
 
     #[test]
@@ -372,6 +378,7 @@ mod node {
         let entry = Detached::new(Rc::new(1), 2);
         Node::push(NonNull::from(&mut *node), entry);
         assert_eq!(node.peek(), Some(&2));
+        assert_eq!(node.peek_key(), Some(&1));
     }
 
     #[test]

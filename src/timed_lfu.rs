@@ -198,6 +198,14 @@ impl<Key: Hash + Eq, Value> TimedLfuCache<Key, Value> {
         self.cache.peek_lfu()
     }
 
+    /// Peeks at the key for the next value to be evicted, if there is one. This
+    /// will not increment the access counter for that value.
+    #[inline]
+    #[must_use]
+    pub fn peek_lfu_key(&self) -> Option<&Key> {
+        self.cache.peek_lfu_key()
+    }
+
     /// Returns the current capacity of the cache.
     #[inline]
     #[must_use]
