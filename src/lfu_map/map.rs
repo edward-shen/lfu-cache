@@ -2,7 +2,6 @@ use std::borrow::Borrow;
 use std::collections::hash_map::{self, RandomState};
 use std::fmt::{Debug, Formatter};
 use std::hash::{BuildHasher, Hash};
-use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
@@ -515,9 +514,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
                 // As a result, at this point, we're guaranteed that we have the
                 // only reference of entry_ptr.
 
-                let Ok(key) = Rc::try_unwrap(detached.key) else {
-                    unsafe { unreachable_unchecked() }
-                };
+                let key = unsafe { Rc::try_unwrap(detached.key).unwrap_unchecked() };
                 (key, detached.value, freq)
             })
     }
