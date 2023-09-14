@@ -92,7 +92,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> LookupTable<Key, Value, State> {
 impl<Key, Value, State> LookupTable<Key, Value, State> {
     pub fn clear(&mut self) {
         for (_, v) in self.0.drain() {
-            unsafe { Box::from_raw(v.as_ptr()) };
+            unsafe { drop(Box::from_raw(v.as_ptr())) };
         }
     }
 }

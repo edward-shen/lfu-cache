@@ -31,7 +31,7 @@ impl<Key, T> Drop for Node<Key, T> {
         // double free.
         if let Some(ptr) = self.next {
             // SAFETY: self is exclusively accessed
-            unsafe { Box::from_raw(ptr.as_ptr()) };
+            unsafe { drop(Box::from_raw(ptr.as_ptr())) };
         }
     }
 }

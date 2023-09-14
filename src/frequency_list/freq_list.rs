@@ -113,7 +113,7 @@ impl<Key, T> Drop for FrequencyList<Key, T> {
     fn drop(&mut self) {
         if let Some(ptr) = self.head {
             // SAFETY: self is exclusively accessed
-            unsafe { Box::from_raw(ptr.as_ptr()) };
+            unsafe { drop(Box::from_raw(ptr.as_ptr())) };
         }
     }
 }
@@ -452,7 +452,7 @@ mod frequency_list {
         assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 2);
 
         // unleak entry
-        unsafe { Box::from_raw(entry.as_ptr()) };
+        unsafe { drop(Box::from_raw(entry.as_ptr())) };
     }
 
     #[test]
@@ -470,8 +470,8 @@ mod frequency_list {
         assert_eq!(list.frequencies().collect::<Vec<_>>(), vec![1, 2]);
 
         // unleak entry
-        unsafe { Box::from_raw(entry_0.as_ptr()) };
-        unsafe { Box::from_raw(entry_1.as_ptr()) };
+        unsafe { drop(Box::from_raw(entry_0.as_ptr())) };
+        unsafe { drop(Box::from_raw(entry_1.as_ptr())) };
     }
 
     #[test]
@@ -488,7 +488,7 @@ mod frequency_list {
         assert_eq!(list.frequencies().collect::<Vec<_>>(), vec![0, 2]);
 
         // unleak entry
-        unsafe { Box::from_raw(entry_0.as_ptr()) };
-        unsafe { Box::from_raw(entry_1.as_ptr()) };
+        unsafe { drop(Box::from_raw(entry_0.as_ptr())) };
+        unsafe { drop(Box::from_raw(entry_1.as_ptr())) };
     }
 }
