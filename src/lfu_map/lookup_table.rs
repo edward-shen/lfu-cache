@@ -44,7 +44,7 @@ impl<Key, Value, State> LookupTable<Key, Value, State> {
 
     #[inline]
     pub(crate) fn iter(&self) -> PeekIter<Key, Value> {
-        PeekIter(self.0.iter())
+        PeekIter::new(self.0.iter())
     }
 
     #[cfg(test)]
