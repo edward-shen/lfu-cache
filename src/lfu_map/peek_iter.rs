@@ -44,14 +44,11 @@ impl<'a, K, V> Iterator for PeekIter<'a, K, V> {
         //   1. Hand out a reference to an Rc or a NonNull
         //   2. Never clone the Rc
 
-        self.0
-            .next()
-            .map(|(key, value)| {
-                // SAFETY: Construction of PeekIter requires a shared reference
-                // to LfuMap, which guarantees that accessing the value is
-                // sound.
-                (key.borrow(), &unsafe { value.as_ref() }.value)
-            })
+        self.0.next().map(|(key, value)| {
+            // SAFETY: Construction of PeekIter requires a shared reference to
+            // LfuMap, which guarantees that accessing the value is sound.
+            (key.borrow(), &unsafe { value.as_ref() }.value)
+        })
     }
 
     #[inline]
@@ -71,7 +68,6 @@ impl<K, V> ExactSizeIterator for PeekIter<'_, K, V> {}
 
 impl<K, V> FusedIterator for PeekIter<'_, K, V> {}
 
-
 // SAFETY: The underlying `Iter` used has a auto-impl Send and Sync bounds on
 // the inner key and value types. In this situation, the key is never Send (Rc
 // wrappers should never be Send), and the value is a `NonNull<Entry<K, V>>`,
@@ -80,8 +76,10 @@ impl<K, V> FusedIterator for PeekIter<'_, K, V> {}
 // However, we never expose the fact that we contain an Rc<T> or NonNull<T>, and
 // only provide references to the underlying type instead. Thus, safety for Send
 // and Sync strictly depends on whether the implementation of PeekIter is sound,
-// as well as if the underlying types are Send and Sync. The latter can be
-// resolved through a bounds check.
+// as well as if the underlying types are Send and Sync.
+//
+// We could probably relax the bounds to always implement Send or Sync, but
+// we'll match the bounds to the standard library's implementation.
 //
 // To ensure we don't violate this condition, safety comments have been added to
 // all methods to ensure developers are aware of this restriction.

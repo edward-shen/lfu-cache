@@ -20,9 +20,7 @@ use super::PeekIter;
 /// [`LfuMap`]: crate::LfuMap
 /// [`peek_values`]: crate::LfuMap::peek_values
 #[derive(Clone, Debug)]
-pub struct PeekValues<'a, K, V>(
-    pub(crate) PeekIter<'a, K, V>
-);
+pub struct PeekValues<'a, K, V>(pub(crate) PeekIter<'a, K, V>);
 
 impl<'a, K, V> Iterator for PeekValues<'a, K, V> {
     type Item = &'a V;
