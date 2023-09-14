@@ -7,8 +7,8 @@ use std::num::NonZeroUsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use crate::frequency_list::FrequencyList;
-use crate::lfu::{remove_entry_pointer, Entry as LfuEntry};
+use crate::frequency_list::{FrequencyList, Node};
+use crate::lfu::{Detached, Entry as LfuEntry};
 
 /// A view into a single entry in the LFU cache, which may either be vacant or
 /// occupied.
@@ -48,10 +48,10 @@ impl<'a, Key, Value> OccupiedEntry<'a, Key, Value> {
 
     /// Take the ownership of the key and value from the map.
     #[must_use]
-    pub fn remove_entry(self) -> (Rc<Key>, Value) {
+    pub fn remove_entry(self) -> (Key, Value) {
         let (key, node) = self.inner.remove_entry();
-        let node = *unsafe { Box::from_raw(node.as_ptr()) };
-        let value = remove_entry_pointer(node, self.len);
+        let value = remove_entry_pointer(node, self.len).value;
+        let key = Rc::into_inner(key).expect("To have no remaining usages left");
         (key, value)
     }
 
@@ -95,10 +95,21 @@ impl<'a, Key, Value> OccupiedEntry<'a, Key, Value> {
     /// Takes the value out of the entry, and returns it.
     #[must_use]
     pub fn remove(self) -> Value {
-        let node = self.inner.remove();
-        let node = *unsafe { Box::from_raw(node.as_ptr()) };
-        remove_entry_pointer(node, self.len)
+        remove_entry_pointer(self.inner.remove(), self.len).value
     }
+}
+
+fn remove_entry_pointer<Key, Value>(
+    mut node: NonNull<LfuEntry<Key, Value>>,
+    len: &mut usize,
+) -> Detached<Key, Value> {
+    let mut owner = unsafe { node.as_mut().owner };
+    let node = LfuEntry::detach_owned(node);
+    if unsafe { owner.as_mut() }.elements.is_none() {
+        Node::detach(unsafe { *Box::from_raw(owner.as_mut()) });
+    }
+    *len -= 1;
+    node
 }
 
 /// A view into a vacant entry in a LFU cache. It is part of the [`Entry`] enum.
@@ -337,7 +348,7 @@ mod entry_api {
 }
 
 #[cfg(test)]
-mod vacant_entry {
+mod vacant {
     use crate::LfuMap;
 
     use super::Entry;
@@ -351,5 +362,38 @@ mod vacant_entry {
 
         // This should not panic
         let _key = entry.into_key();
+    }
+}
+
+#[cfg(test)]
+mod occupied {
+    use crate::LfuMap;
+
+    use super::Entry;
+
+    #[test]
+    fn remove_entry_is_sound() {
+        let mut cache = LfuMap::<i32, i32>::unbounded();
+        cache.insert(10, 23);
+        let Entry::Occupied(entry) = cache.entry(10) else {
+            panic!("Expected vacant entry");
+        };
+
+        // This should not panic
+        let (_key, _) = entry.remove_entry();
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn remove_is_sound() {
+        let mut cache = LfuMap::<i32, i32>::unbounded();
+        cache.insert(10, 23);
+        let Entry::Occupied(entry) = cache.entry(10) else {
+            panic!("Expected vacant entry");
+        };
+
+        // This should not panic
+        let _ = entry.remove();
+        assert_eq!(cache.len(), 0);
     }
 }
