@@ -134,16 +134,18 @@ impl<'a, Key, Value> VacantEntry<'a, Key, Value> {
     #[inline]
     #[must_use]
     pub fn key(&self) -> &Key {
-        self.key.as_ref()
+        self.inner.key()
     }
 
     /// Take ownership of the key.
     #[inline]
     #[must_use]
-    // False positive, const can't evaluate self dropping.
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn into_key(self) -> Rc<Key> {
-        self.key
+    // The unwrap is an implementation detail and therefore should not be
+    // documented
+    #[allow(clippy::missing_panics_doc)]
+    pub fn into_key(self) -> Key {
+        drop(self.inner);
+        Rc::into_inner(self.key).expect("to not have any other references")
     }
 
     /// Sets the value of the entry with the [`VacantEntry`]'s key, and returns
@@ -331,5 +333,23 @@ mod entry_api {
         cache_1.insert(1, 3);
         let res_1 = cache_1.entry(1).or_insert_with_key(|_| 2);
         assert_eq!(res_0, res_1);
+    }
+}
+
+#[cfg(test)]
+mod vacant_entry {
+    use crate::LfuMap;
+
+    use super::Entry;
+
+    #[test]
+    fn into_key_is_sound() {
+        let mut cache = LfuMap::<i32, i32>::unbounded();
+        let Entry::Vacant(entry) = cache.entry(10) else {
+            panic!("Expected vacant entry");
+        };
+
+        // This should not panic
+        let _key = entry.into_key();
     }
 }
