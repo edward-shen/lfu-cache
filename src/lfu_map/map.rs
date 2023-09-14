@@ -352,7 +352,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// ```
     #[inline]
     pub fn keys(&self) -> Keys<Key, Value> {
-        Keys(self.lookup.keys())
+        self.lookup.keys()
     }
 
     /// Returns an iterator over the values of the LFU cache in any order. Note
@@ -373,7 +373,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// ```
     #[inline]
     pub fn peek_values(&self) -> PeekValues<Key, Value> {
-        PeekValues(self.lookup.values())
+        self.lookup.values()
     }
 
     /// Returns an iterator over the keys and values of the LFU cache in any
@@ -394,7 +394,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// ```
     #[inline]
     pub fn peek_iter(&self) -> PeekIter<Key, Value> {
-        PeekIter(self.lookup.iter())
+        self.lookup.iter()
     }
 }
 

@@ -1,9 +1,6 @@
-use std::collections::hash_map::Values;
 use std::iter::FusedIterator;
-use std::ptr::NonNull;
-use std::rc::Rc;
 
-use crate::lfu::Entry;
+use super::PeekIter;
 
 /// An iterator peeking over the values of a [`LfuMap`].
 ///
@@ -23,13 +20,15 @@ use crate::lfu::Entry;
 /// [`LfuMap`]: crate::LfuMap
 /// [`peek_values`]: crate::LfuMap::peek_values
 #[derive(Clone, Debug)]
-pub struct PeekValues<'a, K, V>(pub(crate) Values<'a, Rc<K>, NonNull<Entry<K, V>>>);
+pub struct PeekValues<'a, K, V>(
+    pub(crate) PeekIter<'a, K, V>
+);
 
 impl<'a, K, V> Iterator for PeekValues<'a, K, V> {
     type Item = &'a V;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|value| &unsafe { value.as_ref() }.value)
+        self.0.next().map(|(_, v)| v)
     }
 
     #[inline]

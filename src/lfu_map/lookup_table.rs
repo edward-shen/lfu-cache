@@ -1,5 +1,5 @@
 use std::borrow::Borrow;
-use std::collections::hash_map::{Entry as HashMapEntry, Iter, Keys, RandomState, Values};
+use std::collections::hash_map::{Entry as HashMapEntry, RandomState};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::{BuildHasher, Hash};
@@ -8,6 +8,10 @@ use std::rc::Rc;
 
 use crate::frequency_list::FrequencyList;
 use crate::lfu::Entry;
+
+use super::Keys;
+use super::PeekIter;
+use super::PeekValues;
 
 /// Like a [`HashMap`], but specialized for our needs.
 ///
@@ -29,18 +33,18 @@ impl<Key, Value, State> LookupTable<Key, Value, State> {
     }
 
     #[inline]
-    pub(crate) fn keys(&self) -> Keys<Rc<Key>, NonNull<Entry<Key, Value>>> {
-        self.0.keys()
+    pub(crate) fn keys(&self) -> Keys<Key, Value> {
+        Keys(self.iter())
     }
 
     #[inline]
-    pub(crate) fn values(&self) -> Values<Rc<Key>, NonNull<Entry<Key, Value>>> {
-        self.0.values()
+    pub(crate) fn values(&self) -> PeekValues<Key, Value> {
+        PeekValues(self.iter())
     }
 
     #[inline]
-    pub(crate) fn iter(&self) -> Iter<Rc<Key>, NonNull<Entry<Key, Value>>> {
-        self.0.iter()
+    pub(crate) fn iter(&self) -> PeekIter<Key, Value> {
+        PeekIter(self.0.iter())
     }
 
     #[cfg(test)]

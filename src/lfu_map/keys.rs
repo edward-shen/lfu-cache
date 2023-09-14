@@ -1,9 +1,6 @@
-use std::borrow::Borrow;
 use std::iter::FusedIterator;
-use std::ptr::NonNull;
-use std::rc::Rc;
 
-use crate::lfu::Entry;
+use super::PeekIter;
 
 /// An iterator over the keys of a [`LfuMap`].
 ///
@@ -23,15 +20,13 @@ use crate::lfu::Entry;
 /// [`LfuMap`]: crate::LfuMap
 /// [`keys`]: crate::LfuMap::keys
 #[derive(Clone, Debug)]
-pub struct Keys<'a, K, V>(
-    pub(crate) std::collections::hash_map::Keys<'a, Rc<K>, NonNull<Entry<K, V>>>,
-);
+pub struct Keys<'a, K, V>(pub(crate) PeekIter<'a, K, V>);
 
 impl<'a, K, V> Iterator for Keys<'a, K, V> {
     type Item = &'a K;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(Borrow::borrow)
+        self.0.next().map(|(k, _)| k)
     }
 
     #[inline]
