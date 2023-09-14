@@ -98,6 +98,7 @@ impl<Key, Value> Map<Key, Value> {
     ///
     /// Construction of this cache will not heap allocate.
     ///
+    /// [`HashMap`]: std::collections::HashMap
     /// [`pop_lfu`]: Self::pop_lfu
     ///
     /// # Examples
