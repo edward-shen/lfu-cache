@@ -22,4 +22,8 @@ impl<Key, Value> Iterator for IntoIter<Key, Value> {
 
 impl<Key, Value> FusedIterator for IntoIter<Key, Value> {}
 
-impl<Key, Value> ExactSizeIterator for IntoIter<Key, Value> {}
+impl<Key, Value> ExactSizeIterator for IntoIter<Key, Value> {
+    fn len(&self) -> usize {
+        self.1
+    }
+}

@@ -28,7 +28,7 @@ pub struct Entry<Key, Value> {
 #[cfg(not(tarpaulin_include))]
 impl<Key, Value: Display> Display for Entry<Key, Value> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        self.value.fmt(f)
     }
 }
 

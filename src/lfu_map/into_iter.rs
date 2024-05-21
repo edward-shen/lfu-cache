@@ -25,7 +25,11 @@ impl<Key: Eq + Hash, Value> Iterator for IntoIter<Key, Value> {
 
 impl<Key: Eq + Hash, Value> FusedIterator for IntoIter<Key, Value> {}
 
-impl<Key: Eq + Hash, Value> ExactSizeIterator for IntoIter<Key, Value> {}
+impl<Key: Eq + Hash, Value> ExactSizeIterator for IntoIter<Key, Value> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 #[cfg(test)]
 mod tests {

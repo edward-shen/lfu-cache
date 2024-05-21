@@ -64,7 +64,11 @@ impl<'a, K, V> Iterator for PeekIter<'a, K, V> {
     }
 }
 
-impl<K, V> ExactSizeIterator for PeekIter<'_, K, V> {}
+impl<K, V> ExactSizeIterator for PeekIter<'_, K, V> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 impl<K, V> FusedIterator for PeekIter<'_, K, V> {}
 

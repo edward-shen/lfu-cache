@@ -34,6 +34,10 @@ impl<'a, K, V> Iterator for Frequencies<'a, K, V> {
     }
 }
 
-impl<K, V> ExactSizeIterator for Frequencies<'_, K, V> {}
+impl<K, V> ExactSizeIterator for Frequencies<'_, K, V> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 impl<K, V> FusedIterator for Frequencies<'_, K, V> {}

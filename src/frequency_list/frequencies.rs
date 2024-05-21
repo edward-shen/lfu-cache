@@ -26,9 +26,8 @@ impl<Key, Value> Iterator for Frequencies<'_, Key, Value> {
 
 impl<Key, Value> FusedIterator for Frequencies<'_, Key, Value> {}
 
-impl<Key, Value> ExactSizeIterator for Frequencies<'_, Key, Value> {}
-
-// SAFETY: The implementation of Frequencies only ever reads from the underlying
-// data, and does not clone or make new references to existing data.
-unsafe impl<K, V> Send for Frequencies<'_, K, V> {}
-unsafe impl<K, V> Sync for Frequencies<'_, K, V> {}
+impl<Key, Value> ExactSizeIterator for Frequencies<'_, Key, Value> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}

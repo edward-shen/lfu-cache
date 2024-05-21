@@ -35,6 +35,10 @@ impl<'a, K, V> Iterator for Keys<'a, K, V> {
     }
 }
 
-impl<K, V> ExactSizeIterator for Keys<'_, K, V> {}
+impl<K, V> ExactSizeIterator for Keys<'_, K, V> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 impl<K, V> FusedIterator for Keys<'_, K, V> {}

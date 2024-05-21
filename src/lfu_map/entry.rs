@@ -48,6 +48,7 @@ impl<'a, Key, Value> OccupiedEntry<'a, Key, Value> {
 
     /// Take the ownership of the key and value from the map.
     #[must_use]
+    #[allow(clippy::missing_panics_doc)] // Internal invariant assertion
     pub fn remove_entry(self) -> (Key, Value) {
         let (key, node) = self.inner.remove_entry();
         let value = remove_entry_pointer(node, self.len).value;

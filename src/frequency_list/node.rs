@@ -135,7 +135,7 @@ impl<Key, T> Node<Key, T> {
         Some(&unsafe { self.elements?.as_ref() }.value)
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         let mut count = 0;
         let mut head = self.elements;
         while let Some(cur_node) = head {
