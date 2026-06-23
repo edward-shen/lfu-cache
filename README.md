@@ -24,7 +24,7 @@ assert_eq!(maybe_evicted, Some(4));
 cache.get(&"baz");
 // Otherwise, the least frequently value is evicted.
 assert_eq!(cache.pop_lfu(), Some(3));
-  ```
+```
 
 ## Reasons to use this implementation
 
@@ -51,27 +51,26 @@ assert_eq!(cache.pop_lfu(), Some(3));
 ## Deviances from the paper
 
 This implementation very closely follows the paper, but has one modification to
-ensure correctness. Each node in the _node list_ contains a `Rc` containing the
-key it was stored under, and the lookup table instead is indexed on a `Rc<Key>`
-instead. This is to ensure that the correct key-value in the lookup table can
-be evicted when popping the least frequently used item.
+ensure correctness. Each node in the _node list_ contains a `Arc` containing the
+key it was stored under, and the lookup table instead is indexed on a `Arc<Key>`
+instead. This is to ensure that the correct key-value in the lookup table can be
+evicted when popping the least frequently used item.
 
 This modification was necessary as the hash is _surjective_, and so each item
 necessarily needs to contain some reference to the original key it was stored
 under to ensure that we evict the correct key during hash collisions.
 
 An alternative solution would be to use an monotonically increasing counter, but
-the additional bookkeeping over an `Rc` which functionally provides the same
+the additional bookkeeping over an `Arc` which functionally provides the same
 benefit is unnecessary.
 
 ## License
 
 Licensed under either of
 
- * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
 

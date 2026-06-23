@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::lfu::{Detached, Entry};
 
@@ -134,10 +134,8 @@ impl<Key, T> FrequencyList<Key, T> {
     ///
     /// It is the caller's responsibility to free the returning pointer, usually
     /// via `Box::from_raw(foo.as_ptr())`.
-    pub(crate) fn insert(&mut self, key: Rc<Key>, value: T) -> NonNull<Entry<Key, T>> {
+    pub(crate) fn insert(&mut self, key: Arc<Key>, value: T) -> NonNull<Entry<Key, T>> {
         // Gets or creates a node with a frequency of zero.
-        // Lint false positive; the match guard is unaccounted for.
-        #[allow(clippy::option_if_let_else)]
         let head = match self.head {
             Some(head) if unsafe { head.as_ref() }.frequency == 0 => head,
             _ => self.init_front(),
@@ -196,8 +194,6 @@ impl<Key, T> FrequencyList<Key, T> {
         let freq_list_node = unsafe { (*entry.as_ptr()).owner.as_ptr() };
         let freq_list_node_freq = unsafe { &*freq_list_node }.frequency;
         // Create next node if needed
-        // false positive, lint doesn't respect match guard.
-        #[allow(clippy::option_if_let_else)]
         let next_node = match unsafe { &*freq_list_node }.next {
             // SAFETY: self is exclusively accessed
             Some(node) if unsafe { node.as_ref() }.frequency == freq_list_node_freq + 1 => node,
@@ -296,7 +292,8 @@ impl<Key, T> IntoIterator for FrequencyList<Key, T> {
 
 #[cfg(test)]
 mod frequency_list {
-    use std::{ptr::NonNull, rc::Rc};
+    use std::ptr::NonNull;
+    use std::sync::Arc;
 
     use super::FrequencyList;
 
@@ -315,7 +312,7 @@ mod frequency_list {
     #[test]
     fn insert() {
         let mut list = init_list();
-        let entry = unsafe { Box::from_raw(list.insert(Rc::new(1), 2).as_ptr()) };
+        let entry = unsafe { Box::from_raw(list.insert(Arc::new(1), 2).as_ptr()) };
         assert_eq!(entry.prev, None);
         assert_eq!(entry.next, None);
         assert_eq!(entry.value, 2);
@@ -325,8 +322,8 @@ mod frequency_list {
     #[test]
     fn insert_non_empty() {
         let mut list = init_list();
-        let entry_0 = list.insert(Rc::new(1), 2);
-        let entry_1 = list.insert(Rc::new(3), 4);
+        let entry_0 = list.insert(Arc::new(1), 2);
+        let entry_1 = list.insert(Arc::new(3), 4);
 
         let entry_0_ref = unsafe { entry_0.as_ref() };
         let entry_1_ref = unsafe { entry_1.as_ref() };
@@ -352,9 +349,9 @@ mod frequency_list {
     #[test]
     fn insert_non_empty_non_freq_zero() {
         let mut list = init_list();
-        let entry_0_ptr = list.insert(Rc::new(1), 2).as_ptr();
+        let entry_0_ptr = list.insert(Arc::new(1), 2).as_ptr();
         list.update(NonNull::new(entry_0_ptr).unwrap());
-        let entry_1_ptr = list.insert(Rc::new(3), 4).as_ptr();
+        let entry_1_ptr = list.insert(Arc::new(3), 4).as_ptr();
 
         // validate entry_0
         let entry_0 = unsafe { &*entry_0_ptr };
@@ -444,7 +441,7 @@ mod frequency_list {
     #[test]
     fn update_removes_empty_node() {
         let mut list = init_list();
-        let entry = list.insert(Rc::new(1), 2);
+        let entry = list.insert(Arc::new(1), 2);
 
         list.update(entry);
         assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 1);
@@ -458,8 +455,8 @@ mod frequency_list {
     #[test]
     fn update_does_not_remove_non_empty_node() {
         let mut list = init_list();
-        let entry_0 = list.insert(Rc::new(1), 2);
-        let entry_1 = list.insert(Rc::new(3), 4);
+        let entry_0 = list.insert(Arc::new(1), 2);
+        let entry_1 = list.insert(Arc::new(3), 4);
 
         list.update(entry_0);
         assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 0);
@@ -477,8 +474,8 @@ mod frequency_list {
     #[test]
     fn update_correctly_removes_in_middle_nodes() {
         let mut list = init_list();
-        let entry_0 = list.insert(Rc::new(1), 2);
-        let entry_1 = list.insert(Rc::new(3), 4);
+        let entry_0 = list.insert(Arc::new(1), 2);
+        let entry_1 = list.insert(Arc::new(3), 4);
 
         list.update(entry_0);
         assert_eq!(unsafe { list.head.unwrap().as_ref() }.frequency, 0);

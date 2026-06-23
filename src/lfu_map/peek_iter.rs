@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::collections::hash_map::Iter;
 use std::iter::FusedIterator;
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::lfu::Entry;
 
@@ -24,11 +24,11 @@ use crate::lfu::Entry;
 /// [`LfuMap`]: crate::LfuMap
 /// [`peek_iter`]: crate::LfuMap::peek_iter
 #[derive(Clone, Debug)]
-pub struct PeekIter<'a, K, V>(Iter<'a, Rc<K>, NonNull<Entry<K, V>>>);
+pub struct PeekIter<'a, K, V>(Iter<'a, Arc<K>, NonNull<Entry<K, V>>>);
 
 impl<'a, K, V> PeekIter<'a, K, V> {
     #[inline]
-    pub(crate) const fn new(iter: Iter<'a, Rc<K>, NonNull<Entry<K, V>>>) -> Self {
+    pub(crate) const fn new(iter: Iter<'a, Arc<K>, NonNull<Entry<K, V>>>) -> Self {
         Self(iter)
     }
 }
@@ -41,8 +41,8 @@ impl<'a, K, V> Iterator for PeekIter<'a, K, V> {
         // the Send and Sync bounds.
         //
         // This method must not:
-        //   1. Hand out a reference to an Rc or a NonNull
-        //   2. Never clone the Rc
+        //   1. Hand out a reference to an Arc or a NonNull
+        //   2. Never clone the Arc
 
         self.0.next().map(|(key, value)| {
             // SAFETY: Construction of PeekIter requires a shared reference to
@@ -57,8 +57,8 @@ impl<'a, K, V> Iterator for PeekIter<'a, K, V> {
         // the Send and Sync bounds.
         //
         // This method must not:
-        //   1. Hand out a reference to an Rc or a NonNull
-        //   2. Never clone the Rc
+        //   1. Hand out a reference to an Arc or a NonNull
+        //   2. Never clone the Arc
 
         self.0.size_hint()
     }
@@ -73,11 +73,10 @@ impl<K, V> ExactSizeIterator for PeekIter<'_, K, V> {
 impl<K, V> FusedIterator for PeekIter<'_, K, V> {}
 
 // SAFETY: The underlying `Iter` used has a auto-impl Send and Sync bounds on
-// the inner key and value types. In this situation, the key is never Send (Rc
-// wrappers should never be Send), and the value is a `NonNull<Entry<K, V>>`,
-// where the pointee may be aliased.
+// the inner key and value types. In this situation, the key is never Send and
+// the value is a `NonNull<Entry<K, V>>`, where the pointee may be aliased.
 //
-// However, we never expose the fact that we contain an Rc<T> or NonNull<T>, and
+// However, we never expose the fact that we contain an Arc<T> or NonNull<T>, and
 // only provide references to the underlying type instead. Thus, safety for Send
 // and Sync strictly depends on whether the implementation of PeekIter is sound,
 // as well as if the underlying types are Send and Sync.
@@ -87,6 +86,6 @@ impl<K, V> FusedIterator for PeekIter<'_, K, V> {}
 //
 // To ensure we don't violate this condition, safety comments have been added to
 // all methods to ensure developers are aware of this restriction.
-#[allow(clippy::non_send_fields_in_send_ty)]
+#[expect(clippy::non_send_fields_in_send_ty)]
 unsafe impl<K: Send, V: Send> Send for PeekIter<'_, K, V> {}
 unsafe impl<K: Sync, V: Sync> Sync for PeekIter<'_, K, V> {}

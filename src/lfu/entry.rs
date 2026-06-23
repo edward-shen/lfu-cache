@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::frequency_list::Node;
 
@@ -21,7 +21,7 @@ pub struct Entry<Key, Value> {
     /// lookup table entry on lru popping, and we need the key to properly fetch
     /// the correct entry (the hash itself is not guaranteed to return the
     /// correct entry).
-    pub(crate) key: Rc<Key>,
+    pub(crate) key: Arc<Key>,
     pub(crate) value: Value,
 }
 

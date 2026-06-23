@@ -5,7 +5,7 @@ use std::collections::hash_map::{
 };
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::frequency_list::{FrequencyList, Node};
 use crate::lfu::{Detached, Entry as LfuEntry};
@@ -24,16 +24,14 @@ pub enum Entry<'a, Key, Value> {
 
 /// A view into an occupied entry in a LFU cache. It is part of the [`Entry`]
 /// enum.
-// This structure is re-exported at the root, so it's okay to be repetitive.
-#[allow(clippy::module_name_repetitions)]
 pub struct OccupiedEntry<'a, Key, Value> {
-    inner: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
+    inner: InnerOccupiedEntry<'a, Arc<Key>, NonNull<LfuEntry<Key, Value>>>,
     len: &'a mut usize,
 }
 
 impl<'a, Key, Value> OccupiedEntry<'a, Key, Value> {
     pub(super) const fn new(
-        entry: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
+        entry: InnerOccupiedEntry<'a, Arc<Key>, NonNull<LfuEntry<Key, Value>>>,
         len: &'a mut usize,
     ) -> Self {
         Self { inner: entry, len }
@@ -48,11 +46,11 @@ impl<'a, Key, Value> OccupiedEntry<'a, Key, Value> {
 
     /// Take the ownership of the key and value from the map.
     #[must_use]
-    #[allow(clippy::missing_panics_doc)] // Internal invariant assertion
+    #[expect(clippy::missing_panics_doc)] // Internal invariant assertion
     pub fn remove_entry(self) -> (Key, Value) {
         let (key, node) = self.inner.remove_entry();
         let value = remove_entry_pointer(node, self.len).value;
-        let key = Rc::into_inner(key).expect("To have no remaining usages left");
+        let key = Arc::into_inner(key).expect("To have no remaining usages left");
         (key, value)
     }
 
@@ -114,11 +112,9 @@ fn remove_entry_pointer<Key, Value>(
 }
 
 /// A view into a vacant entry in a LFU cache. It is part of the [`Entry`] enum.
-// This structure is re-exported at the root, so it's okay to be repetitive.
-#[allow(clippy::module_name_repetitions)]
 pub struct VacantEntry<'a, Key, Value> {
-    inner: InnerVacantEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
-    key: Rc<Key>,
+    inner: InnerVacantEntry<'a, Arc<Key>, NonNull<LfuEntry<Key, Value>>>,
+    key: Arc<Key>,
     freq_list: &'a mut FrequencyList<Key, Value>,
     cache_capacity: Option<NonZeroUsize>,
     cache_len: &'a mut usize,
@@ -126,8 +122,8 @@ pub struct VacantEntry<'a, Key, Value> {
 
 impl<'a, Key, Value> VacantEntry<'a, Key, Value> {
     pub(super) const fn new(
-        entry: InnerVacantEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
-        key: Rc<Key>,
+        entry: InnerVacantEntry<'a, Arc<Key>, NonNull<LfuEntry<Key, Value>>>,
+        key: Arc<Key>,
         freq_list: &'a mut FrequencyList<Key, Value>,
         cache_capacity: Option<NonZeroUsize>,
         cache_len: &'a mut usize,
@@ -154,10 +150,10 @@ impl<'a, Key, Value> VacantEntry<'a, Key, Value> {
     #[must_use]
     // The unwrap is an implementation detail and therefore should not be
     // documented
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(clippy::missing_panics_doc)]
     pub fn into_key(self) -> Key {
         drop(self.inner);
-        Rc::into_inner(self.key).expect("to not have any other references")
+        Arc::into_inner(self.key).expect("to not have any other references")
     }
 
     /// Sets the value of the entry with the [`VacantEntry`]'s key, and returns

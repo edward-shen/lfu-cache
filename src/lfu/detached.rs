@@ -1,6 +1,6 @@
 use std::hash::Hash;
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::frequency_list::Node;
 
@@ -14,12 +14,12 @@ use super::Entry;
 #[must_use]
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Clone)]
 pub struct Detached<Key, Value> {
-    pub(crate) key: Rc<Key>,
+    pub(crate) key: Arc<Key>,
     pub(crate) value: Value,
 }
 
 impl<Key, Value> Detached<Key, Value> {
-    pub const fn new(key: Rc<Key>, value: Value) -> Self {
+    pub const fn new(key: Arc<Key>, value: Value) -> Self {
         Self { key, value }
     }
 

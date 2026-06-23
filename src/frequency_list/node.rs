@@ -157,7 +157,7 @@ mod node {
     use crate::lfu::Detached;
     use std::ops::{Deref, DerefMut};
     use std::ptr::NonNull;
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     fn init_node() -> AutoDropNode<isize, isize> {
         AutoDropNode::default()
@@ -266,7 +266,7 @@ mod node {
     #[test]
     fn append_empty() {
         let mut node = init_node();
-        let entry = Detached::new(Rc::new(1), 2);
+        let entry = Detached::new(Arc::new(1), 2);
         Node::push(NonNull::from(&mut *node), entry);
 
         let head = node.elements.unwrap();
@@ -281,7 +281,7 @@ mod node {
         let mut node = init_node();
 
         // insert first node
-        let entry_0 = Detached::new(Rc::new(1), 2);
+        let entry_0 = Detached::new(Arc::new(1), 2);
         Node::push(NonNull::from(&mut *node), entry_0);
         let head_0 = unsafe { node.elements.unwrap().as_ref() };
         assert_eq!(head_0.owner, NonNull::from(&*node));
@@ -290,7 +290,7 @@ mod node {
         assert_eq!(head_0.prev, None);
 
         // insert second node
-        let entry_1 = Detached::new(Rc::new(1), 3);
+        let entry_1 = Detached::new(Arc::new(1), 3);
         Node::push(NonNull::from(&mut *node), entry_1);
         let head = unsafe { node.elements.unwrap().as_ref() };
         assert_eq!(head.owner, NonNull::from(&*node));
@@ -299,7 +299,7 @@ mod node {
         assert_eq!(head.prev, None);
 
         // insert last node
-        let entry_2 = Detached::new(Rc::new(1), 4);
+        let entry_2 = Detached::new(Arc::new(1), 4);
         Node::push(NonNull::from(&mut *node), entry_2);
         let head = unsafe { node.elements.unwrap().as_ref() };
         assert_eq!(head.owner, NonNull::from(&*node));
@@ -317,7 +317,7 @@ mod node {
     fn pop_single() {
         let mut node = init_node();
 
-        let entry = Detached::new(Rc::new(1), 2);
+        let entry = Detached::new(Arc::new(1), 2);
         Node::push(NonNull::from(&mut *node), entry.clone());
 
         let popped = node.pop();
@@ -331,15 +331,15 @@ mod node {
         let mut node = init_node();
 
         // insert first node
-        let entry_0 = Detached::new(Rc::new(1), 2);
+        let entry_0 = Detached::new(Arc::new(1), 2);
         Node::push(NonNull::from(&mut *node), entry_0);
 
         // insert second node
-        let entry_1 = Detached::new(Rc::new(1), 3);
+        let entry_1 = Detached::new(Arc::new(1), 3);
         Node::push(NonNull::from(&mut *node), entry_1);
 
         // insert last node
-        let entry_2 = Detached::new(Rc::new(1), 4);
+        let entry_2 = Detached::new(Arc::new(1), 4);
         Node::push(NonNull::from(&mut *node), entry_2.clone());
 
         // pop top
@@ -370,7 +370,7 @@ mod node {
     #[test]
     fn peek_non_empty() {
         let mut node = init_node();
-        let entry = Detached::new(Rc::new(1), 2);
+        let entry = Detached::new(Arc::new(1), 2);
         Node::push(NonNull::from(&mut *node), entry);
         assert_eq!(node.peek_key(), Some(&1));
         assert_eq!(node.peek(), Some(&2));
@@ -380,9 +380,9 @@ mod node {
     fn len_is_consistent() {
         let mut node = init_node();
         assert_eq!(node.len(), 0);
-        let entry_0 = Detached::new(Rc::new(1), 2);
-        let entry_1 = Detached::new(Rc::new(3), 4);
-        let entry_2 = Detached::new(Rc::new(5), 6);
+        let entry_0 = Detached::new(Arc::new(1), 2);
+        let entry_1 = Detached::new(Arc::new(3), 4);
+        let entry_2 = Detached::new(Arc::new(5), 6);
         Node::push(NonNull::from(&mut *node), entry_0);
         assert_eq!(node.len(), 1);
         Node::push(NonNull::from(&mut *node), entry_1);

@@ -1,10 +1,10 @@
 use std::borrow::Borrow;
-use std::collections::hash_map::{Entry as HashMapEntry, RandomState};
 use std::collections::HashMap;
+use std::collections::hash_map::{Entry as HashMapEntry, RandomState};
 use std::fmt::{Debug, Formatter};
 use std::hash::{BuildHasher, Hash};
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::frequency_list::FrequencyList;
 use crate::lfu::Entry;
@@ -17,7 +17,7 @@ use super::PeekValues;
 ///
 /// Note that only a mutable access is provided
 pub struct LookupTable<Key, Value, State = RandomState>(
-    HashMap<Rc<Key>, NonNull<Entry<Key, Value>>, State>,
+    HashMap<Arc<Key>, NonNull<Entry<Key, Value>>, State>,
 );
 
 impl<Key, Value> LookupTable<Key, Value, RandomState> {
@@ -64,7 +64,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> LookupTable<Key, Value, State> {
         freq_list: &mut FrequencyList<Key, Value>,
     ) -> Option<&mut Entry<Key, Value>>
     where
-        Rc<Key>: Borrow<Q>,
+        Arc<Key>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         let ptr = self.0.get_mut(key)?;
@@ -78,7 +78,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> LookupTable<Key, Value, State> {
     #[inline]
     pub(crate) fn remove<Q>(&mut self, key: &Q) -> Option<NonNull<Entry<Key, Value>>>
     where
-        Rc<Key>: Borrow<Q>,
+        Arc<Key>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         self.0.remove(key)
@@ -87,8 +87,8 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> LookupTable<Key, Value, State> {
     #[inline]
     pub(crate) fn entry(
         &mut self,
-        key: Rc<Key>,
-    ) -> HashMapEntry<'_, Rc<Key>, NonNull<Entry<Key, Value>>> {
+        key: Arc<Key>,
+    ) -> HashMapEntry<'_, Arc<Key>, NonNull<Entry<Key, Value>>> {
         self.0.entry(key)
     }
 }

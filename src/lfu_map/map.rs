@@ -5,7 +5,7 @@ use std::hash::{BuildHasher, Hash};
 use std::iter::FromIterator;
 use std::num::NonZeroUsize;
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::frequency_list::FrequencyList;
 use crate::frequency_list::WithFrequency;
@@ -420,11 +420,11 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
     // TODO: return a (Key, Value, Freq)
     #[inline]
     pub fn insert(&mut self, key: Key, value: Value) -> Option<Value> {
-        self.insert_rc(Rc::new(key), value)
+        self.insert_rc(Arc::new(key), value)
     }
 
     /// Like [`Self::insert`], but with an shared key instead.
-    fn insert_rc(&mut self, key: Rc<Key>, value: Value) -> Option<Value> {
+    fn insert_rc(&mut self, key: Arc<Key>, value: Value) -> Option<Value> {
         let mut evicted = self.remove(&key);
 
         if let Some(capacity) = self.capacity {
@@ -448,7 +448,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
         //     the dangling pointer with an actual value.
         let v = self
             .lookup
-            .entry(Rc::clone(&key))
+            .entry(Arc::clone(&key))
             .or_insert_with(NonNull::dangling);
         *v = self.freq_list.insert(key, value);
 
@@ -462,8 +462,8 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
     /// performed. This behavior is a limitation of the Entry API.
     #[inline]
     pub fn entry(&mut self, key: Key) -> Entry<'_, Key, Value> {
-        let key = Rc::new(key);
-        match self.lookup.entry(Rc::clone(&key)) {
+        let key = Arc::new(key);
+        match self.lookup.entry(Arc::clone(&key)) {
             hash_map::Entry::Occupied(mut entry) => {
                 self.freq_list.update(*entry.get_mut());
                 Entry::Occupied(OccupiedEntry::new(entry, &mut self.len))
@@ -514,7 +514,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
                 // As a result, at this point, we're guaranteed that we have the
                 // only reference of entry_ptr.
 
-                let key = unsafe { Rc::try_unwrap(detached.key).unwrap_unchecked() };
+                let key = unsafe { Arc::try_unwrap(detached.key).unwrap_unchecked() };
                 (key, detached.value, freq)
             })
     }
@@ -536,7 +536,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
     pub fn get<Q>(&mut self, key: &Q) -> Option<&Value>
     where
         Q: Hash + Eq + ?Sized,
-        Rc<Key>: Borrow<Q>,
+        Arc<Key>: Borrow<Q>,
     {
         self.lookup
             .get_mut(key, &mut self.freq_list)
@@ -560,20 +560,20 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
     pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut Value>
     where
         Q: Hash + Eq + ?Sized,
-        Rc<Key>: Borrow<Q>,
+        Arc<Key>: Borrow<Q>,
     {
         self.get_rc_key_value_mut(key).map(|(_, v)| v)
     }
 
-    /// Like `get_mut`, but also returns the Rc as well.
-    // NOTE: Do _NOT_ make this pub! Rc<Key> must never be cloned or we violate invariants!
-    pub(crate) fn get_rc_key_value_mut<Q>(&mut self, key: &Q) -> Option<(Rc<Key>, &mut Value)>
+    /// Like `get_mut`, but also returns the `Arc` as well.
+    // NOTE: Do _NOT_ make this pub! Arc<Key> must never be cloned or we violate invariants!
+    pub(crate) fn get_rc_key_value_mut<Q>(&mut self, key: &Q) -> Option<(Arc<Key>, &mut Value)>
     where
         Q: Hash + Eq + ?Sized,
-        Rc<Key>: Borrow<Q>,
+        Arc<Key>: Borrow<Q>,
     {
         let entry = self.lookup.get_mut(key, &mut self.freq_list)?;
-        Some((Rc::clone(&entry.key), &mut entry.value))
+        Some((Arc::clone(&entry.key), &mut entry.value))
     }
 
     /// Removes a value from the cache by key, if it exists.
@@ -592,7 +592,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
     pub fn remove<Q>(&mut self, key: &Q) -> Option<Value>
     where
         Q: Hash + Eq + ?Sized,
-        Rc<Key>: Borrow<Q>,
+        Arc<Key>: Borrow<Q>,
     {
         self.lookup.remove(key).map(|node| {
             // SAFETY: We have unique access to self. At this point, we've
