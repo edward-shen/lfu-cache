@@ -32,7 +32,7 @@ pub struct OccupiedEntry<'a, Key, Value> {
 }
 
 impl<'a, Key, Value> OccupiedEntry<'a, Key, Value> {
-    pub(super) fn new(
+    pub(super) const fn new(
         entry: InnerOccupiedEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
         len: &'a mut usize,
     ) -> Self {
@@ -125,7 +125,7 @@ pub struct VacantEntry<'a, Key, Value> {
 }
 
 impl<'a, Key, Value> VacantEntry<'a, Key, Value> {
-    pub(super) fn new(
+    pub(super) const fn new(
         entry: InnerVacantEntry<'a, Rc<Key>, NonNull<LfuEntry<Key, Value>>>,
         key: Rc<Key>,
         freq_list: &'a mut FrequencyList<Key, Value>,

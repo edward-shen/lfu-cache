@@ -21,3 +21,6 @@ criterion = "0.5"
 name = "scaling"
 path = "benches/scaling.rs"
 harness = false
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }

@@ -56,7 +56,7 @@ impl<Key, Value> Entry<Key, Value> {
     /// This is useful to avoid deallocating memory and immediately
     /// reallocating, such as in the common operation of moving a [`Entry`]
     /// to the next frequency node.
-    pub(crate) fn detach(mut node: NonNull<Self>) -> DetachedRef<Key, Value> {
+    pub(crate) const fn detach(mut node: NonNull<Self>) -> DetachedRef<Key, Value> {
         // There are five links to fix:
         // ┌──────┐ (1) ┌─────┐ (2) ┌──────┐
         // │      ├────►│     ├────►│      │

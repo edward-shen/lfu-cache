@@ -75,7 +75,7 @@ impl<Key, T> Node<Key, T> {
         attached
     }
 
-    pub(crate) fn push_ref(mut node: NonNull<Self>, entry: DetachedRef<Key, T>) {
+    pub(crate) const fn push_ref(mut node: NonNull<Self>, entry: DetachedRef<Key, T>) {
         let attached = entry.attach_ref(None, unsafe { node.as_mut() }.elements, node);
         unsafe { node.as_mut() }.elements = Some(attached);
     }

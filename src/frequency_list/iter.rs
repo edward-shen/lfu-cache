@@ -27,9 +27,9 @@ impl<'a, Key, Value> Iterator for Iter<'a, Key, Value> {
     }
 }
 
-impl<'a, Key, Value> FusedIterator for Iter<'a, Key, Value> {}
+impl<Key, Value> FusedIterator for Iter<'_, Key, Value> {}
 
-impl<'a, Key, Value> ExactSizeIterator for Iter<'a, Key, Value> {
+impl<Key, Value> ExactSizeIterator for Iter<'_, Key, Value> {
     fn len(&self) -> usize {
         self.1
     }

@@ -20,7 +20,7 @@ use std::iter::FusedIterator;
 #[derive(Debug)]
 pub struct Frequencies<'a, K, V>(pub(crate) crate::frequency_list::Frequencies<'a, K, V>);
 
-impl<'a, K, V> Iterator for Frequencies<'a, K, V> {
+impl<K, V> Iterator for Frequencies<'_, K, V> {
     type Item = usize;
 
     #[inline]

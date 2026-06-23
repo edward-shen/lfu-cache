@@ -260,7 +260,7 @@ impl<Key, T> FrequencyList<Key, T> {
     }
 
     /// Returns an iterator of all frequencies in the list.
-    pub(crate) fn frequencies(&self) -> Frequencies<Key, T> {
+    pub(crate) fn frequencies(&self) -> Frequencies<'_, Key, T> {
         Frequencies::new(self.iter())
     }
 

@@ -33,17 +33,17 @@ impl<Key, Value, State> LookupTable<Key, Value, State> {
     }
 
     #[inline]
-    pub(crate) fn keys(&self) -> Keys<Key, Value> {
+    pub(crate) fn keys(&self) -> Keys<'_, Key, Value> {
         Keys(self.iter())
     }
 
     #[inline]
-    pub(crate) fn values(&self) -> PeekValues<Key, Value> {
+    pub(crate) fn values(&self) -> PeekValues<'_, Key, Value> {
         PeekValues(self.iter())
     }
 
     #[inline]
-    pub(crate) fn iter(&self) -> PeekIter<Key, Value> {
+    pub(crate) fn iter(&self) -> PeekIter<'_, Key, Value> {
         PeekIter::new(self.0.iter())
     }
 
@@ -88,7 +88,7 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> LookupTable<Key, Value, State> {
     pub(crate) fn entry(
         &mut self,
         key: Rc<Key>,
-    ) -> HashMapEntry<Rc<Key>, NonNull<Entry<Key, Value>>> {
+    ) -> HashMapEntry<'_, Rc<Key>, NonNull<Entry<Key, Value>>> {
         self.0.entry(key)
     }
 }

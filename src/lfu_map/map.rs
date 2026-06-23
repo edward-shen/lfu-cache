@@ -330,7 +330,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// ```
     #[inline]
     #[must_use]
-    pub fn frequencies(&self) -> Frequencies<Key, Value> {
+    pub fn frequencies(&self) -> Frequencies<'_, Key, Value> {
         Frequencies(self.freq_list.frequencies())
     }
 
@@ -350,7 +350,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// assert_eq!(keys, vec![&1, &3]);
     /// ```
     #[inline]
-    pub fn keys(&self) -> Keys<Key, Value> {
+    pub fn keys(&self) -> Keys<'_, Key, Value> {
         self.lookup.keys()
     }
 
@@ -371,7 +371,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// assert_eq!(values, vec![&2, &4]);
     /// ```
     #[inline]
-    pub fn peek_values(&self) -> PeekValues<Key, Value> {
+    pub fn peek_values(&self) -> PeekValues<'_, Key, Value> {
         self.lookup.values()
     }
 
@@ -392,7 +392,7 @@ impl<Key, Value, State> Map<Key, Value, State> {
     /// assert_eq!(iter, vec![(&1, &2), (&3, &4)]);
     /// ```
     #[inline]
-    pub fn peek_iter(&self) -> PeekIter<Key, Value> {
+    pub fn peek_iter(&self) -> PeekIter<'_, Key, Value> {
         self.lookup.iter()
     }
 }

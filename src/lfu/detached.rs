@@ -19,7 +19,7 @@ pub struct Detached<Key, Value> {
 }
 
 impl<Key, Value> Detached<Key, Value> {
-    pub fn new(key: Rc<Key>, value: Value) -> Self {
+    pub const fn new(key: Rc<Key>, value: Value) -> Self {
         Self { key, value }
     }
 

@@ -35,7 +35,7 @@ impl<Key, Value> DetachedRef<Key, Value> {
         Self(inner)
     }
 
-    pub(crate) fn attach_ref(
+    pub(crate) const fn attach_ref(
         self,
         prev: Option<NonNull<Entry<Key, Value>>>,
         next: Option<NonNull<Entry<Key, Value>>>,
