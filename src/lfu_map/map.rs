@@ -49,8 +49,8 @@ pub struct Map<Key, Value, State = RandomState> {
     len: usize,
 }
 
-unsafe impl<Key: Send, Value: Send, State> Send for Map<Key, Value, State> {}
-unsafe impl<Key: Sync, Value: Sync, State> Sync for Map<Key, Value, State> {}
+unsafe impl<Key: Send, Value: Send, State: Send> Send for Map<Key, Value, State> {}
+unsafe impl<Key: Sync, Value: Sync, State: Sync> Sync for Map<Key, Value, State> {}
 
 impl<Key: Eq + Hash, Value: PartialEq> PartialEq for Map<Key, Value> {
     fn eq(&self, other: &Self) -> bool {

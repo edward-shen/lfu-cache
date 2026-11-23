@@ -16,6 +16,7 @@ codegen-units = 1
 
 [dev-dependencies]
 criterion = "0.5"
+trybuild = "1"
 
 [[bench]]
 name = "scaling"
