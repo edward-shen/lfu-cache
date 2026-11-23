@@ -78,7 +78,7 @@ impl<Key, T> Debug for FrequencyList<Key, T> {
         while let Some(cur_node) = node {
             let cur_node = unsafe { cur_node.as_ref() };
             dbg.field(
-                &format!("node freq {} num elements", &cur_node.frequency),
+                &format!("node freq {} num elements", cur_node.frequency),
                 &cur_node.len(),
             );
             node = cur_node.next;
