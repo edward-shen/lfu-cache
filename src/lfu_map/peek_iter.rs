@@ -87,5 +87,5 @@ impl<K, V> FusedIterator for PeekIter<'_, K, V> {}
 // To ensure we don't violate this condition, safety comments have been added to
 // all methods to ensure developers are aware of this restriction.
 #[expect(clippy::non_send_fields_in_send_ty)]
-unsafe impl<K: Send, V: Send> Send for PeekIter<'_, K, V> {}
+unsafe impl<K: Sync, V: Sync> Send for PeekIter<'_, K, V> {}
 unsafe impl<K: Sync, V: Sync> Sync for PeekIter<'_, K, V> {}
