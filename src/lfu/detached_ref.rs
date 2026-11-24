@@ -18,7 +18,7 @@ use super::Entry;
 ///
 /// Because this is intended as an optimization, not re-attaching the detached
 /// value will likely lead to a memory leak. As a result, this intentionally
-/// panics to avoid this scenario.
+/// panics on drop to avoid this scenario.
 ///
 /// [`Detached`]: super::Detached
 #[must_use]
