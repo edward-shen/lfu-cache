@@ -17,6 +17,7 @@ pub use frequencies::Frequencies;
 pub use into_iter::IntoIter;
 pub use keys::Keys;
 use lookup_table::LookupTable;
+pub(crate) use map::DefaultState;
 pub use map::Map as LfuMap;
 pub use peek_iter::PeekIter;
 pub use peek_values::PeekValues;

@@ -15,6 +15,8 @@ use super::{Entry, Frequencies, LookupTable, PeekIter};
 use super::{Keys, PeekValues};
 use super::{OccupiedEntry, VacantEntry};
 
+pub(crate) type DefaultState = RandomState;
+
 /// A collection that if limited to a certain capacity will evict based on the
 /// least recently used value.
 ///
@@ -42,7 +44,7 @@ use super::{OccupiedEntry, VacantEntry};
 /// ```
 // Note that Default is _not_ implemented. This is intentional, as most people
 // likely don't want an unbounded LFU cache by default.
-pub struct Map<Key, Value, State = RandomState> {
+pub struct Map<Key, Value, State = DefaultState> {
     lookup: LookupTable<Key, Value, State>,
     freq_list: FrequencyList<Key, Value>,
     capacity: Option<NonZeroUsize>,
@@ -420,11 +422,11 @@ impl<Key: Eq + Hash, Value, State: BuildHasher> Map<Key, Value, State> {
     // TODO: return a (Key, Value, Freq)
     #[inline]
     pub fn insert(&mut self, key: Key, value: Value) -> Option<Value> {
-        self.insert_rc(Arc::new(key), value)
+        self.insert_arc(Arc::new(key), value)
     }
 
     /// Like [`Self::insert`], but with an shared key instead.
-    fn insert_rc(&mut self, key: Arc<Key>, value: Value) -> Option<Value> {
+    pub(crate) fn insert_arc(&mut self, key: Arc<Key>, value: Value) -> Option<Value> {
         let mut evicted = self.remove(&key);
 
         if let Some(capacity) = self.capacity {
